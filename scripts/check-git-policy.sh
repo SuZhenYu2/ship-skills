@@ -80,8 +80,13 @@ check_range() {
   local errs=0
   check_branch || errs=$((errs + 1))
 
-  if ! git -C "${REPO_DIR}" rev-parse --verify "${BASE_REF}" >/dev/null 2>&1; then
-    echo "[FAIL] 基线引用 '${BASE_REF}' 不存在，请通过 --base 指定正确基线。" >&2
+  local base_commit commits
+  if ! base_commit="$(git -C "${REPO_DIR}" rev-parse --verify "${BASE_REF}^{commit}")"; then
+    echo "[FAIL] 基线引用 '${BASE_REF}' 不存在或不是提交，请通过 --base 指定正确基线。" >&2
+    return 1
+  fi
+  if ! commits="$(git -C "${REPO_DIR}" log "${base_commit}..HEAD" --pretty=format:'%h%x09%s')"; then
+    echo "[FAIL] 无法枚举 ${BASE_REF}..HEAD 提交，区间校验未完成。" >&2
     return 1
   fi
 
@@ -96,9 +101,9 @@ check_range() {
     else
       echo "[PASS] ${sha} ${subject}"
     fi
-  done < <(git -C "${REPO_DIR}" log "${BASE_REF}..HEAD" --no-merges --pretty=format:'%h%x09%s')
+  done <<< "${commits}"
 
-  echo "汇总：基线 ${BASE_REF}..HEAD 共检查 ${total} 条非 merge 提交，不合规 ${bad} 条。"
+  echo "汇总：基线 ${BASE_REF}..HEAD 共检查 ${total} 条提交（含 merge），不合规 ${bad} 条。"
   if [[ "${bad}" -gt 0 || "${errs}" -gt 0 ]]; then
     return 1
   fi

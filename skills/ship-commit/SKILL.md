@@ -11,6 +11,8 @@ description: 校验当前分支与暂存区改动，优先调用确定性脚本�
 
 - 严格遵循 `references/git-branch-policy.md` 与 `references/dev-baseline.md`。
 - **生成消息 ≠ 通过 Review ≠ 授权提交**；仅当用户明确授权且**零阻塞警告**时才执行 `git commit`。
+- **提交快照必须与已验证快照一致**：待提交的 index 树必须等于 `ship-verify` 证据对象中的 `index tree`，且 `HEAD` 与证据一致；否则视为未验证改动，禁止提交。
+- **禁止部分暂存直接提交**：存在未暂存改动（`git diff` 非空）时先冻结暂存范围；不得把未经当前快照验证的内容提交出去，也不得擅自 `git add` / `git stash`。
 - **Multi-Agent 红线**：本 Skill 仅限主 Agent（`Lead`）执行，子 Agent 严禁调用。
 
 ## 反偷懒红线（Red Flags）
@@ -23,16 +25,22 @@ description: 校验当前分支与暂存区改动，优先调用确定性脚本�
 1. **确定性分支校验与工作区检查**
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（若脚本不在当前仓库路径，则直接执行等价只读 `git branch --show-current` 并对照 `references/git-branch-policy.md` 正则校验）。
    - 查看 `git status --short` 与 `git diff --cached`；若暂存区为空，提示先确认暂存范围，并指出混入的无关文件或调试残留。
-2. **提取并核对飞书需求 ID（`<req-id>`）**
+   - 运行 `git diff --quiet`：退出码非零表示存在未暂存改动，必须列出文件并阻断，确认这些改动是否应纳入本次提交；不得擅自 `git add` 或 `git stash`。
+   - 运行 `git write-tree` 记录待提交 index 树，并记录 `git rev-parse HEAD`。
+2. **核对验证与审查证据对象**
+   - 对照最近一次 `ship-verify` 证据：`HEAD` 与 `index tree` 必须与当前记录一致；缺失证据或快照不一致时阻断，要求对当前快照重跑 `ship-verify` 与 `ship-review`。
+   - `ship-review` 的裁决必须是 `READY`；`INCOMPLETE` / `BLOCKED` 一律阻断。
+3. **提取并核对飞书需求 ID（`<req-id>`）**
    - 优先从合规分支末尾提取 `<req-id>`；若对话中显式提供新 ID 且与分支不一致，必须先向用户确认。
-3. **生成并校验 Commit Message**
+4. **生成并校验 Commit Message**
    - 格式：`<type>(<req-id>): <scope> <subject>`。
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --mode commit-msg --message "<msg>"` 验证正则通过。
-4. **按授权决定是否提交**
-   - 存在任何阻塞项（基线分支、缺 `<req-id>`、暂存区为空）或未获提交授权时：只输出校验结果、建议 message 与解锁确认项，**不执行 `git commit`**。
+5. **按授权决定是否提交**
+   - 存在任何阻塞项（基线分支、缺 `<req-id>`、暂存区为空、存在未暂存改动、index 与验证证据不一致、缺少 PASS/READY 证据）或未获提交授权时：只输出校验结果、建议 message 与解锁确认项，**不执行 `git commit`**。
 
 ## 输出格式（仅对话输出，不生成文件）
 
 - **分支与需求 ID 校验**：当前分支状态、`<req-id>` 来源
+- **证据对象一致性**：待提交 `HEAD` / `index tree` 与 `ship-verify` 记录的比对结果，以及 `git diff` 是否存在未暂存改动
 - **建议 Commit Message**：单行代码块
 - **提醒项**（如有）：未跑 `ship-review`、暂存区为空、混入无关文件或调试代码时显式提示

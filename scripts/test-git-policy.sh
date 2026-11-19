@@ -79,7 +79,39 @@ git -C "${REPO_MERGE}" checkout -q master
 commit_file "${REPO_MERGE}" mainline.txt "mainline" "fix(1000): base sync"
 git -C "${REPO_MERGE}" checkout -q "feature-20261120-order-cancel-7056405076"
 git -C "${REPO_MERGE}" merge -q --no-ff master -m "Merge branch 'master' into feature"
-expect_ok "merge 提交不参与需求 ID 校验" bash "${CHECK}" --repo "${REPO_MERGE}" --mode range --base master
+expect_fail "merge 提交缺少需求 ID 被拦截" bash "${CHECK}" --repo "${REPO_MERGE}" --mode range --base master
+git -C "${REPO_MERGE}" commit --amend -qm "chore(7056405076): order merge master"
+expect_ok "合规 merge 提交通过" bash "${CHECK}" --repo "${REPO_MERGE}" --mode range --base master
+
+expect_ok "合法空区间通过" bash "${CHECK}" --repo "${REPO_BRANCH}" --mode range --base master
+expect_fail "不存在的基线被拦截" bash "${CHECK}" --repo "${REPO_BRANCH}" --mode range --base missing-base
+BLOB="$(git -C "${REPO_BRANCH}" hash-object -w --stdin </dev/null)"
+expect_fail "非 commit 基线被拦截" bash "${CHECK}" --repo "${REPO_BRANCH}" --mode range --base "${BLOB}"
+git -C "${REPO_BRANCH}" tag -a baseline -m baseline master
+expect_ok "指向 commit 的附注 tag 可作基线" bash "${CHECK}" --repo "${REPO_BRANCH}" --mode range --base baseline
+
+(
+  git() {
+    local arg
+    for arg in "$@"; do
+      if [[ "${arg}" == log ]]; then
+        printf 'fatal: simulated object read failure\n' >&2
+        return 128
+      fi
+    done
+    command git "$@"
+  }
+  export -f git
+  if bash "${CHECK}" --repo "${REPO_BRANCH}" --mode range --base master >"${TMP_ROOT}/log-failure.out" 2>&1; then
+    exit 1
+  fi
+  found_failure=false
+  while IFS= read -r line; do
+    [[ "${line}" != 汇总：* ]] || exit 1
+    if [[ "${line}" == *无法枚举* ]]; then found_failure=true; fi
+  done < "${TMP_ROOT}/log-failure.out"
+  [[ "${found_failure}" == true ]]
+) && pass "枚举失败不输出成功汇总" || fail "枚举失败未正确阻断"
 
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

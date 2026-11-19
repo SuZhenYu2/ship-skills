@@ -13,12 +13,13 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
 - 若项目 `AGENTS.md` 或 `references/stacks/` 配置了语言专项审查红线，一并纳入审查。
 - **只看真实风险，不刷无意义风格意见**；在 Multi-Agent 模式下必须使用全新干净上下文（`Critic` / `Auditor`）执行，防止“自己写自己审”。
 - **READY 只属于证据齐全的改动**：`ship-verify` 的必需门禁未运行或结论为 `PARTIAL` 时，输出 `INCOMPLETE`，不得用 READY 代替。
+- **READY 必须对应同一代码快照**：`ship-verify` 证据中的 `HEAD` 与 `index tree` 必须与当前仓库一致；缺失证据对象或快照不一致时输出 `INCOMPLETE`，要求对当前快照重跑验证。
 
 ## 执行步骤
 
 1. **收集审查输入**
-   - 读取 `git status` 与完整 `git diff`（包含已暂存与未暂存改动）。
-   - 读取关联的 `.ship/specs/<slug>.md`、`.ship/plans/<slug>.md` 或 `.ship/fixes/<slug>.md`（如存在）以及最近一次 `ship-verify` 证据。
+   - 读取 `git status` 与 `git diff HEAD`（同时覆盖已暂存与未暂存改动），记录当前 `git rev-parse HEAD` 与 `git write-tree`。
+   - 读取关联的 `.ship/specs/<slug>.md`、`.ship/plans/<slug>.md` 或 `.ship/fixes/<slug>.md`（如存在）以及最近一次 `ship-verify` 证据，核对证据对象的 `HEAD` / `index tree` 是否与当前一致。
 2. **逐项对照风险清单审查**
    - 严格按 `references/review-checklist.md` 的六大维度检查：
      1. 正确性与数据一致性
@@ -34,12 +35,13 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
    - 每条发现必须定位到 `<file>:<line>`，说明触发机理与最小修改建议，并标记 `BLOCKER` / `MAJOR` / `MINOR`。
    - **裁决规则**：
      - 存在任意 `BLOCKER` → 输出 `BLOCKED`（阻断提交，需修复后重新 `ship-verify` 并复审；注意遵循 `docs/multi-agent-policy.md` 的 2 轮熔断上限）。
-     - 无 `BLOCKER`，但 `ship-verify` 必需门禁未运行或为 `PARTIAL` → 输出 `INCOMPLETE`，列出缺失证据与补齐命令。
-     - 无 `BLOCKER` 且必需证据齐全 → 输出 `READY`（如有 `MAJOR` 需明确提醒用户确认是否先修再提交）。
+     - 无 `BLOCKER`，但 `ship-verify` 必需门禁未运行、为 `PARTIAL`，或证据对象与当前 `HEAD` / `index tree` 不一致 → 输出 `INCOMPLETE`，列出缺失证据与补齐命令。
+     - 无 `BLOCKER` 且必需证据齐全且快照一致 → 输出 `READY`（如有 `MAJOR` 需明确提醒用户确认是否先修再提交）。
 
 ## 输出格式（仅对话输出，不生成文件）
 
 - **审查裁决**：`READY` / `BLOCKED` / `INCOMPLETE`
+- **证据对象核对**：验证记录的 `HEAD` / `index tree`、当前 `HEAD` / `index tree` 是否一致；不一致时说明需重跑的验证
 - **改动范围与契约对齐度**：简述本次 diff 覆盖的核心文件与验收条件对齐情况
 - **发现清单**：按 `BLOCKER` → `MAJOR` → `MINOR` 排序（无问题则明确写“未发现阻断或高风险项”）
 - **下一步**：`READY` 时建议进入 `ship-commit`；`INCOMPLETE` 时给出补齐验证的最小命令。
