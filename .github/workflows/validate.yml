@@ -1,0 +1,17 @@
+name: validate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate skill structure and installed layout
+        run: bash scripts/validate-skills.sh
+      - name: Test Git policy checks
+        run: bash scripts/test-git-policy.sh
