@@ -7,6 +7,10 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-review`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。两路独立审查仍由 Lead 按证据裁决，不能以多数票跳过最终快照门禁。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md`、`references/review-checklist.md` 与 `references/git-branch-policy.md`。

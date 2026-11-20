@@ -7,6 +7,10 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-auto`，按共享协议统一回显配置与计划策略（不是执行事实）。失败暂停并报告，不静默降级 off；本阶段仅导航，不派发候选，结束时明确报告实际执行为只读导航。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md` 与 `references/git-branch-policy.md`。

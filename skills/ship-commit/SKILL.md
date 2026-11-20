@@ -7,6 +7,10 @@ description: 校验当前分支与暂存区改动，优先调用确定性脚本�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-commit`，统一回显配置与计划策略（不是执行事实），结束时报告实际结果；失败暂停，不静默降级 off。本阶段始终仅 Lead 串行执行，不派发竞争候选；开关不授予任何 Git 写权限。
+
 ## 核心原则
 
 - 严格遵循 `references/git-branch-policy.md` 与 `references/dev-baseline.md`。

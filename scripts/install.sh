@@ -113,6 +113,7 @@ install_to_dir() {
       mkdir -p "${dest_skill}/docs" "${dest_skill}/scripts"
       cp "${REPO_ROOT}/docs/multi-agent-policy.md" "${dest_skill}/docs/multi-agent-policy.md"
       cp "${REPO_ROOT}/scripts/check-git-policy.sh" "${dest_skill}/scripts/check-git-policy.sh"
+      cp "${REPO_ROOT}/scripts/arena-state.sh" "${dest_skill}/scripts/arena-state.sh"
       echo "  [已安装] ${skill_name} -> ${dest_skill}"
     fi
     count=$((count + 1))

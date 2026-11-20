@@ -21,6 +21,9 @@ required_files=(
   "scripts/install.sh"
   "scripts/check-git-policy.sh"
   "scripts/test-git-policy.sh"
+  "scripts/arena-state.sh"
+  "scripts/test-arena-state.sh"
+  "references/arena-policy.md"
 )
 
 echo "==> 校验核心文件完整性"
@@ -78,8 +81,8 @@ for skill_dir in "${REPO_ROOT}"/skills/ship-*; do
   done < <(grep -oE '(references|docs|scripts|skills)/[a-zA-Z0-9_./-]+\.(md|sh)' "${skill_file}" | sort -u || true)
 done
 
-if [[ "${SKILL_COUNT}" -ne 10 ]]; then
-  echo "[ERROR] 预期 10 个 ship-* Skill，实际检测到 ${SKILL_COUNT} 个" >&2
+if [[ "${SKILL_COUNT}" -ne 11 ]]; then
+  echo "[ERROR] 预期 11 个 ship-* Skill，实际检测到 ${SKILL_COUNT} 个" >&2
   ERRORS=$((ERRORS + 1))
 fi
 
@@ -95,7 +98,7 @@ fi
 for installed_skill in "${TMP_INSTALL}"/ship-*; do
   [[ -d "${installed_skill}" ]] || continue
   installed_name="$(basename "${installed_skill}")"
-  for required in references/dev-baseline.md docs/multi-agent-policy.md scripts/check-git-policy.sh; do
+  for required in references/dev-baseline.md references/arena-policy.md docs/multi-agent-policy.md scripts/check-git-policy.sh scripts/arena-state.sh; do
     if [[ ! -f "${installed_skill}/${required}" ]]; then
       echo "[ERROR] 安装后 ${installed_name} 缺少 ${required}" >&2
       ERRORS=$((ERRORS + 1))

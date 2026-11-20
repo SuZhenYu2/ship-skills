@@ -15,3 +15,5 @@ jobs:
         run: bash scripts/validate-skills.sh
       - name: Test Git policy checks
         run: bash scripts/test-git-policy.sh
+      - name: Test task arena state
+        run: bash scripts/test-arena-state.sh

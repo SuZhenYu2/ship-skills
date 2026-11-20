@@ -2,6 +2,13 @@
 
 本文件是所有 `ship-*` Skill 共同遵守的底层规则。各 Skill 只需补充本阶段的专属步骤，不重复抄写基线。
 
+## 0. 任务级 Arena 入口
+
+- 所有 ship 阶段先执行 `references/arena-policy.md`：确认仓库根和任务 ID（ship-arena 的 on/off 直接执行动作，无需前置 status），其他入口调用 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage <ship-stage>`；任务不明先询问，不猜全局 active task。
+- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/`，不修改业务 `.gitignore`；执行前披露该元数据写入，用户禁止时先确认冲突。
+- 统一保留脚本回显（如 `[ship-plan] Arena: ON | 范围: <id> | 计划策略: 双候选方案比选`），并将实际执行另行报告；状态读取失败必须暂停，不得静默当作 off。缺文件才默认 off。
+- on/off 在阶段及新候选派发边界生效；off 后停止新派发，对运行请求尝试取消，否则忽略结果。Arena 不默认并行业务实现，不改变原有门禁；所有 Git 写操作仅 Lead 获授权后串行执行。
+
 ## 1. 风险分级与流程裁剪
 
 根据改动风险决定流程深度，避免过度设计或盲目编码：

@@ -22,6 +22,13 @@
 - **验证缺口不冒充通过**：必需门禁无法运行时标注 `PARTIAL` / `INCOMPLETE`，不得声称 `READY` 或已可提交。
 - **禁止自动越权**：Skill 之间不自动串行触发；未获明确授权前，不执行 `git commit`、`rebase`、`merge`、`push` 或破坏性清理。
 
+### 任务级 Arena
+
+- 各 ship 阶段先读取所安装 Skill 的 `references/arena-policy.md`，明确仓库根与任务 ID；ship-arena 的 on/off 直接执行动作（无需前置 status），其他入口调用 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage <ship-stage>`。任务不明确先确认，不猜全局 active task。
+- `ship-arena` 管理该任务 on/off/status，状态在 `.ship/tasks/<id>/arena.json`；缺文件默认 off，损坏或读取失败必须报告并暂停，不能静默降级。每阶段统一回显配置、计划策略与实际执行的区别。
+- on/off 在阶段及新候选派发边界生效；关闭后不派发新候选，运行中请求尝试取消，否则忽略。selective 策略默认两个只读候选，不默认并行业务实现；最终整合快照仍须重验与独立审查。
+- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/`，不修改业务 `.gitignore`；先披露该本地元数据写入，若用户禁止则先确认冲突。开关不授予其他 Git 权限；提交、暂存、分支等 Git 写操作仅 Lead 获授权后串行执行。这是协作约定，不是提示词层面的强制安全隔离。
+
 ## 3. Git 分支与飞书需求 ID 提交规范
 
 - **合法分支格式**：

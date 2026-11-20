@@ -7,6 +7,10 @@ description: 按行为风险实施代码改动与自动化测试：新行为优�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-tdd`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。Arena 仅比较测试/边界建议，业务实现保持单路，不默认并行写码。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md`。若有 `.ship/specs/<slug>.md` 或 `.ship/plans/<slug>.md`，严格以此为准。
