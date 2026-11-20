@@ -113,5 +113,33 @@ expect_ok "指向 commit 的附注 tag 可作基线" bash "${CHECK}" --repo "${R
   [[ "${found_failure}" == true ]]
 ) && pass "枚举失败不输出成功汇总" || fail "枚举失败未正确阻断"
 
+REPO_HANDOFF="${TMP_ROOT}/handoff"
+mkdir -p "${REPO_HANDOFF}"
+git -C "${REPO_HANDOFF}" init -q -b main
+git -C "${REPO_HANDOFF}" -c user.name=Test -c user.email=test@example.com -c commit.gpgsign=false commit --allow-empty -qm 'baseline'
+head_id="$(git -C "${REPO_HANDOFF}" rev-parse HEAD)"
+old_tree="$(git -C "${REPO_HANDOFF}" write-tree)"
+printf 'feature\n' > "${REPO_HANDOFF}/app.txt"
+git -C "${REPO_HANDOFF}" add app.txt
+new_tree="$(git -C "${REPO_HANDOFF}" write-tree)"
+handoff() {
+  bash "${CHECK}" --repo "${REPO_HANDOFF}" --mode handoff --verify-head "${head_id}" --verify-tree "${new_tree}" --review-head "${head_id}" --review-tree "$1"
+}
+expect_ok "PASS 与 READY 指向相同的待提交快照" handoff "${new_tree}"
+if result="$(handoff "${old_tree}" 2>&1)" || [[ "${result}" != *'READY 证据缺失或不匹配'* ]]; then
+  fail "新 PASS 不能搭配旧 READY：${result}"
+else
+  pass "新 PASS 不能搭配旧 READY"
+fi
+printf 'regression\n' > "${REPO_HANDOFF}/test-app.txt"
+if result="$(handoff "${new_tree}" 2>&1)" || [[ "${result}" != *'未跟踪文件'*test-app.txt* ]]; then
+  fail "未跟踪回归测试阻断提交：${result}"
+else
+  pass "未跟踪回归测试阻断提交"
+fi
+git -C "${REPO_HANDOFF}" add test-app.txt
+new_tree="$(git -C "${REPO_HANDOFF}" write-tree)"
+expect_ok "暂存测试并更新两份快照证据后通过" handoff "${new_tree}"
+
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

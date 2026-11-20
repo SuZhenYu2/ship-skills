@@ -31,7 +31,9 @@ class ArenaTests(unittest.TestCase):
     def test_on_off_roundtrip_and_isolation(self):
         self.assertIn('ON', self.run_state('--task', 'order-cancel', 'on'))
         path = self.repo / '.ship/tasks/order-cancel/arena.json'
-        self.assertEqual(json.loads(path.read_text()), dict(version=1, enabled=True, policy='selective', candidates=2))
+        state = json.loads(path.read_text())
+        self.assertEqual({key: value for key, value in state.items() if key != 'generation'}, dict(version=1, enabled=True, policy='selective', candidates=2))
+        self.assertTrue(state['generation'])
         self.assertIn('OFF', self.run_state('--task', 'other', 'status'))
         self.assertIn('OFF', self.run_state('--task', 'order-cancel', 'off'))
         self.assertFalse(json.loads(path.read_text())['enabled'])
@@ -84,6 +86,38 @@ class ArenaTests(unittest.TestCase):
         self.script = installed / 'ship-arena/scripts/arena-state.sh'
         self.assertIn('ON', self.run_state('--task', 'installed', 'on'))
         self.assertIn('OFF', self.run_state('--task', 'other', 'status'))
+
+    def test_old_generation_rejected_after_off_on(self):
+        self.run_state('--task', 'test', 'on')
+        path = self.repo / '.ship/tasks/test/arena.json'
+        generation = json.loads(path.read_text()).get('generation', 'missing')
+        self.run_state('--task', 'test', 'check', '--generation', generation)
+        self.run_state('--task', 'test', 'off')
+        self.run_state('--task', 'test', 'check', '--generation', generation, ok=False)
+        self.run_state('--task', 'test', 'on')
+        self.run_state('--task', 'test', 'check', '--generation', generation, ok=False)
+        current = json.loads(path.read_text())['generation']
+        self.assertNotEqual(current, generation)
+        self.run_state('--task', 'test', 'check', '--generation', current)
+        self.run_state('--task', 'test', 'status')
+        self.assertEqual(json.loads(path.read_text())['generation'], current)
+
+    def test_legacy_enabled_config_requires_explicit_reenable(self):
+        path = self.repo / '.ship/tasks/legacy/arena.json'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(dict(version=1, enabled=True, policy='selective', candidates=2)))
+        self.assertIn('未绑定批次', self.run_state('--task', 'legacy', 'status'))
+        self.run_state('--task', 'legacy', 'check', '--generation', 'old', ok=False)
+        self.run_state('--task', 'legacy', 'on')
+        self.assertTrue(json.loads(path.read_text())['generation'])
+
+    def test_check_requires_task_local_generation(self):
+        self.run_state('--task', 'test', 'check', ok=False)
+        self.run_state('--task', 'test', 'on')
+        path = self.repo / '.ship/tasks/test/arena.json'
+        generation = json.loads(path.read_text()).get('generation', 'missing')
+        self.run_state('--task', 'other', 'on')
+        self.run_state('--task', 'other', 'check', '--generation', generation, ok=False)
 
     def test_worktree_supported(self):
         subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'baseline'], check=True)

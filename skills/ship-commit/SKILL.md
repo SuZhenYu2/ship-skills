@@ -29,11 +29,11 @@ description: 校验当前分支与暂存区改动，优先调用确定性脚本�
 1. **确定性分支校验与工作区检查**
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（若脚本不在当前仓库路径，则直接执行等价只读 `git branch --show-current` 并对照 `references/git-branch-policy.md` 正则校验）。
    - 查看 `git status --short` 与 `git diff --cached`；若暂存区为空，提示先确认暂存范围，并指出混入的无关文件或调试残留。
-   - 运行 `git diff --quiet`：退出码非零表示存在未暂存改动，必须列出文件并阻断，确认这些改动是否应纳入本次提交；不得擅自 `git add` 或 `git stash`。
-   - 运行 `git write-tree` 记录待提交 index 树，并记录 `git rev-parse HEAD`。
+   - 未暂存修改和非忽略的未跟踪文件都须交回 Lead 确认范围；不得擅自 `git add` 或 `git stash`。以下 handoff 门禁负责核对工作区和待提交快照。
 2. **核对验证与审查证据对象**
-   - 对照最近一次 `ship-verify` 证据：`HEAD` 与 `index tree` 必须与当前记录一致；缺失证据或快照不一致时阻断，要求对当前快照重跑 `ship-verify` 与 `ship-review`。
-   - `ship-review` 的裁决必须是 `READY`；`INCOMPLETE` / `BLOCKED` 一律阻断。
+   - 分别读取当前任务的真实 Verify `PASS` 与 Review `READY` 记录，各自必须包含当时的 `HEAD` 与 `index tree`。不得用当前值补齐旧记录，也不得以新 PASS 代替复审。
+   - 提交前由 Lead 运行 `bash <skill-dir>/scripts/check-git-policy.sh --repo . --mode handoff --verify-head <PASS-head> --verify-tree <PASS-tree> --review-head <READY-head> --review-tree <READY-tree>`。必须通过；缺记录、快照不匹配、非忽略的未跟踪文件或未暂存修改均阻断。
+   - 若 Critic 新增或修改了测试，接收其文件清单；由 Lead 确认纳入范围并按授权暂存，再针对最终快照重新验证与复审。不得自行忽略新增测试或借用旧结论。
 3. **提取并核对飞书需求 ID（`<req-id>`）**
    - 优先从合规分支末尾提取 `<req-id>`；若对话中显式提供新 ID 且与分支不一致，必须先向用户确认。
 4. **生成并校验 Commit Message**
