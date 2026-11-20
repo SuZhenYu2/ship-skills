@@ -91,6 +91,8 @@
 
 > 执行建议：每次只改一个结构，先用同一场景跑基线，再跑改后。同一场景至少重复 3 次，避免单次随机波动。
 
+> 夹具与记录：用例 2/3/5/10 的最小陷阱仓库可用 `bash evals/fixtures/build-fixtures.sh <target-dir>` 生成（夹具说明与自检见 `evals/fixtures/README.md`）；通过率用 `evals/results-template.md` 记录。用例 6/7/8/9 的夹具待补。
+
 ## 与外部 Skill 集做对比验证的最小协议
 
 文件数量、脚本行数只能证明资产规模，不能证明决策质量。对比 `ship-skills` 与其他 Skill 集时，按以下协议执行：

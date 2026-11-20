@@ -46,7 +46,7 @@ description: 在实现前深度拷问需求与方案（Pressure-test）：消除
 
 1. **必选：Spec 契约文档** → `.ship/specs/<slug>.md`
    - 文档头固定包含：`> Status: DRAFT | ALIGNED | IMPLEMENTED | STUCK`、`> Source: <需求来源>`、`> Last updated: <YYYY-MM-DD>`；正文固定包含：背景与目标（含飞书 `<req-id>`）、范围与非目标、核心术语与业务规则、接口/数据契约变化、异常/并发/兼容性要求、已拍板的关键权衡、可验证验收标准。
-   - `Status` 语义：`DRAFT` 仍有未决项；`ALIGNED` 关键要求已对齐且无实现阻断问题；`STUCK` 存在具体阻塞决策；`IMPLEMENTED` 仅在已有实现证据时保留。
+   - `Status` 枚举与语义见 `references/dev-baseline.md` 的产物状态枚举；`IMPLEMENTED` 仅在已有实现证据时保留。
 2. **按需：稳定领域词汇** → 项目根目录 `CONTEXT.md`（`--spec-only` 跳过）
    - 仅当本次对齐确立了**后续多需求会反复复用**的稳定业务术语、状态机定义或系统边界时，以增量追加/更新方式写入 `CONTEXT.md`（不破坏原有条目）。
 3. **按需：架构决策记录（ADR）** → `docs/adr/<nnnn>-<slug>.md`（`--spec-only` 跳过）

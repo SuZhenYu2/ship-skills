@@ -1,6 +1,6 @@
 ---
 name: ship-commit
-description: 校验当前分支与暂存区改动，优先调用确定性脚本检查分支与飞书需求 ID 规范，生成 <type>(<req-id>): <scope> <subject> 提交信息；未获授权不执行提交。
+description: "校验当前分支与暂存区改动，优先调用确定性脚本检查分支与飞书需求 ID 规范，生成 <type>(<req-id>): <scope> <subject> 提交信息；未获授权不执行提交。"
 ---
 
 # ship-commit（提交规范校验与消息生成）
@@ -30,9 +30,14 @@ description: 校验当前分支与暂存区改动，优先调用确定性脚本�
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --mode commit-msg --message "<msg>"` 验证正则通过。
 4. **按授权决定是否提交**
    - 存在任何阻塞项（基线分支、缺 `<req-id>`、暂存区为空）或未获提交授权时：只输出校验结果、建议 message 与解锁确认项，**不执行 `git commit`**。
+5. **绑定提交与证据记录**
+   - 提交前核对记录 Diff-Hash 与本次暂存内容一致（`git diff --cached HEAD | shasum -a 256`，Linux 用 `sha256sum`）；不一致说明证据过期，先重跑 `ship-verify` / `ship-review`。
+   - 获授权且 `git commit` 成功后，向本次改动对应的 `.ship/verify/<slug>.md` 与 `.ship/review/<slug>.md` 追加 `> Commit: <新提交完整 SHA>`（`git rev-parse HEAD`，记录契约见 `references/dev-baseline.md`）。
+   - 若对应记录缺失，提醒先补跑；无记录的提交在 `ship-finish` 会判 `BLOCKED`。
 
-## 输出格式（仅对话输出，不生成文件）
+## 输出格式（对话输出；授权提交后向证据记录追加 Commit 绑定）
 
 - **分支与需求 ID 校验**：当前分支状态、`<req-id>` 来源
 - **建议 Commit Message**：单行代码块
 - **提醒项**（如有）：未跑 `ship-review`、暂存区为空、混入无关文件或调试代码时显式提示
+- **证据绑定**（授权提交成功后）：已向哪些 verify/review 记录追加 `> Commit: <SHA>`

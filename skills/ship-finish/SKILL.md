@@ -21,9 +21,10 @@ description: 验证与审查通过后的分支收尾：优先调用确定性脚�
 
 1. **确定性前置门禁检查**
    - 运行 `git status --short` 确认工作区干净（无未提交改动、无未忽略的 `.ship/` 或构建缓存）。
-   - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode range --base <target-base>`（若脚本不可用则逐条读取 `git log <base>..HEAD` 对照正则核验），校验当前分支与全部提交的飞书需求 ID。
-2. **核对验证与审查状态**
-   - 确认针对最新提交已有 `ship-verify`（PASS）与 `ship-review`（READY）记录；若缺失或有新提交未复验，标记为阻断项并提醒补跑。
+   - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode range --base <target-base>`（若脚本不可用则逐条读取 `git log <base>..HEAD` 对照正则核验），校验当前分支与全部提交的飞书需求 ID。`<target-base>` 默认来源见 `references/git-branch-policy.md`，未指明时向用户确认。
+2. **核对验证与审查记录（仅凭仓库内文件）**
+   - 对 `<base>..HEAD` 每条提交的完整 SHA（`git log --pretty=%H`），在 `.ship/verify/` 与 `.ship/review/` 中查找含 `> Commit: <sha>` 的记录，且 Status 分别为 `PASS` 与 `READY`（记录契约见 `references/dev-baseline.md`）。
+   - 任一提交缺记录或 Status 不符，标记为阻断项并提醒补跑 `ship-verify` / `ship-review` 后重新绑定；不依赖对话记忆放行。
 3. **生成 PR / 合并说明草稿**
    - 包含：关联飞书 `<req-id>`、分支与目标基线、变更摘要、验证证据与未覆盖范围、风险与回滚方案。
 4. **列出待授权收尾命令**

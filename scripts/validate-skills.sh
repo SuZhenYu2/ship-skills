@@ -4,6 +4,63 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# frontmatter 必须用真实 YAML 解析器严格校验；缺失时硬失败，不降级为字面值检查
+YAML_PARSER=""
+if command -v ruby >/dev/null 2>&1; then
+  YAML_PARSER="ruby"
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+  YAML_PARSER="python3"
+else
+  echo "[ERROR] 未找到 YAML 解析器（ruby 或 python3+PyYAML），无法严格校验 SKILL.md frontmatter。" >&2
+  exit 1
+fi
+
+parse_frontmatter() {
+  local skill_file="$1" dir_name="$2"
+  if [[ "${YAML_PARSER}" == "ruby" ]]; then
+    ruby -ryaml -e '
+      raw = File.read(ARGV[0])
+      expected = ARGV[1]
+      fm = raw.split(/^---\s*$/)[1]
+      abort "[ERROR] #{expected}/SKILL.md 缺少 YAML frontmatter" if fm.nil?
+      begin
+        data = YAML.safe_load(fm)
+      rescue => e
+        abort "[ERROR] #{expected}/SKILL.md frontmatter YAML 解析失败: #{e.message}"
+      end
+      abort "[ERROR] #{expected}/SKILL.md frontmatter 不是键值映射" unless data.is_a?(Hash)
+      name = data["name"]
+      desc = data["description"]
+      abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 name 字段" unless name.is_a?(String) && !name.strip.empty?
+      abort "[ERROR] #{expected}/SKILL.md 的 name (#{name}) 与目录名不一致" if name != expected
+      abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 description 字段" unless desc.is_a?(String) && !desc.strip.empty?
+    ' "${skill_file}" "${dir_name}"
+  else
+    python3 - "${skill_file}" "${dir_name}" <<'PY'
+import re, sys
+import yaml
+path, expected = sys.argv[1], sys.argv[2]
+raw = open(path, encoding="utf-8").read()
+parts = re.split(r"^---\s*$", raw, flags=re.M)
+if len(parts) < 2:
+    sys.exit(f"[ERROR] {expected}/SKILL.md 缺少 YAML frontmatter")
+try:
+    data = yaml.safe_load(parts[1])
+except yaml.YAMLError as e:
+    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter YAML 解析失败: {e}")
+if not isinstance(data, dict):
+    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 不是键值映射")
+name, desc = data.get("name"), data.get("description")
+if not isinstance(name, str) or not name.strip():
+    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 缺少 name 字段")
+if name != expected:
+    sys.exit(f"[ERROR] {expected}/SKILL.md 的 name ({name}) 与目录名不一致")
+if not isinstance(desc, str) or not desc.strip():
+    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 缺少 description 字段")
+PY
+  fi
+}
+
 ERRORS=0
 SKILL_COUNT=0
 
@@ -21,6 +78,10 @@ required_files=(
   "scripts/install.sh"
   "scripts/check-git-policy.sh"
   "scripts/test-git-policy.sh"
+  "scripts/test-validate-skills.sh"
+  "evals/fixtures/build-fixtures.sh"
+  "evals/fixtures/test-fixtures.sh"
+  "evals/results-template.md"
 )
 
 echo "==> 校验核心文件完整性"
@@ -51,19 +112,7 @@ for skill_dir in "${REPO_ROOT}"/skills/ship-*; do
     continue
   fi
 
-  fm_name="$(awk '/^---$/{c++; next} c==1 && /^name:/{sub(/^name:[[:space:]]*/, ""); gsub(/^["'\'']|["'\'']$/, ""); print; exit}' "${skill_file}")"
-  fm_desc="$(awk '/^---$/{c++; next} c==1 && /^description:/{sub(/^description:[[:space:]]*/, ""); print; exit}' "${skill_file}")"
-
-  if [[ -z "${fm_name}" ]]; then
-    echo "[ERROR] ${dir_name}/SKILL.md frontmatter 缺少 name 字段" >&2
-    ERRORS=$((ERRORS + 1))
-  elif [[ "${fm_name}" != "${dir_name}" ]]; then
-    echo "[ERROR] ${dir_name}/SKILL.md 的 name (${fm_name}) 与目录名不一致" >&2
-    ERRORS=$((ERRORS + 1))
-  fi
-
-  if [[ -z "${fm_desc}" ]]; then
-    echo "[ERROR] ${dir_name}/SKILL.md frontmatter 缺少 description 字段" >&2
+  if ! parse_frontmatter "${skill_file}" "${dir_name}"; then
     ERRORS=$((ERRORS + 1))
   fi
 
@@ -112,7 +161,7 @@ for installed_skill in "${TMP_INSTALL}"/ship-*; do
   done < <(grep -oE '(references|docs|scripts)/[a-zA-Z0-9_./-]+\.(md|sh)' "${installed_skill}/SKILL.md" | sort -u || true)
 done
 
-for script in "${REPO_ROOT}"/scripts/*.sh; do
+for script in "${REPO_ROOT}"/scripts/*.sh "${REPO_ROOT}"/evals/fixtures/*.sh; do
   if ! bash -n "${script}"; then
     echo "[ERROR] Shell 语法错误: $(basename "${script}")" >&2
     ERRORS=$((ERRORS + 1))

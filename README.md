@@ -14,9 +14,9 @@
 | `ship-plan` | 方案设计 | 针对复杂/高风险改动，冻结共享契约、拆解模块与文件白名单、设计回滚与测试矩阵 | `.ship/plans/<slug>.md` |
 | `ship-tdd` | 编码实现 | 按风险决定先测后写或增量实现，锁住行为结果 | 源码 + 测试 |
 | `ship-fix` | 故障修复 | 先复现与假设证伪定位 Root Cause，再修复并补齐回归测试 | 复杂故障输出 `.ship/fixes/<slug>.md` |
-| `ship-verify` | 验证门禁 | 声称完成前跑通真实构建、测试与静态检查命令，附原始输出证据 | 仅对话输出 |
-| `ship-review` | 风险审查 | 提交前对照 `spec` 和 `git diff` 审查数据、并发、异常、兼容性与越界改动 | 仅对话输出 |
-| `ship-commit` | 提交规范 | 调用确定性脚本校验分支与提交消息，按 `<type>(<req-id>): <scope> <subject>` 生成提交信息 | 仅对话输出 |
+| `ship-verify` | 验证门禁 | 声称完成前跑通真实构建、测试与静态检查命令，附原始输出证据 | 对话输出 + `.ship/verify/<slug>.md` |
+| `ship-review` | 风险审查 | 提交前对照 `spec` 和 `git diff` 审查数据、并发、异常、兼容性与越界改动 | 对话输出 + `.ship/review/<slug>.md` |
+| `ship-commit` | 提交规范 | 调用确定性脚本校验分支与提交消息，按 `<type>(<req-id>): <scope> <subject>` 生成提交信息 | 对话输出 + 证据记录 Commit 绑定 |
 | `ship-finish` | 分支收尾 | 逐条校验全部提交的飞书需求 ID、验证/审查记录与工作区状态，生成 PR/合并说明 | 仅对话输出 |
 
 ## 快速开始
@@ -31,6 +31,8 @@ bash scripts/install.sh --target all --upgrade
 
 # 3. 在目标业务项目根目录放置常驻规则
 cp AGENTS.md.template /path/to/your-project/AGENTS.md
+
+# 4. 必做定制：填写 references/git-branch-policy.md 的飞书需求 ID 获取路径，并确认默认合入基线
 ```
 
 ## 常用对话指令
@@ -48,6 +50,7 @@ cp AGENTS.md.template /path/to/your-project/AGENTS.md
 
 - 确定性 Git / 飞书需求 ID 校验：`scripts/check-git-policy.sh`
 - Git 规范回归测试：`bash scripts/test-git-policy.sh`
-- 10 项对抗校准用例集：`evals/calibration-cases.md`
-- CI 门禁：`.github/workflows/validate.yml`（结构校验 + 安装布局 + Git 规范回归）
+- 校验器回归测试（frontmatter YAML 与结构门禁）：`bash scripts/test-validate-skills.sh`
+- 10 项对抗校准用例集：`evals/calibration-cases.md`（用例 2/3/5/10 夹具：`evals/fixtures/`，记录模板：`evals/results-template.md`）
+- CI 门禁：`.github/workflows/validate.yml`（结构校验 + 安装布局 + Git 规范回归 + 校验器回归 + eval 夹具自检）
 - 安装指南：[docs/onboarding.md](docs/onboarding.md) · 工作流：[docs/workflow.md](docs/workflow.md) · 多 Agent 协议：[docs/multi-agent-policy.md](docs/multi-agent-policy.md)

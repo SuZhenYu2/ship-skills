@@ -15,3 +15,7 @@ jobs:
         run: bash scripts/validate-skills.sh
       - name: Test Git policy checks
         run: bash scripts/test-git-policy.sh
+      - name: Test validator regressions
+        run: bash scripts/test-validate-skills.sh
+      - name: Test eval fixtures
+        run: bash evals/fixtures/test-fixtures.sh

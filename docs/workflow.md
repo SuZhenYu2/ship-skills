@@ -37,10 +37,12 @@
 | `.ship/specs/<slug>.md` | `ship-spec` | `ship-plan` / `ship-tdd` / `ship-review` / `Critic` | 目标、非目标、边界条件、异常规则、验收标准 |
 | `.ship/plans/<slug>.md` | `ship-plan` | `ship-tdd` / `Builder` / `Critic` | 冻结契约、模块拆解、文件白名单、回滚方案、测试矩阵 |
 | `.ship/fixes/<slug>.md` | `ship-fix` | `ship-verify` / `ship-review` / `Lead` | 复现方式、假设证伪记录、Root Cause、修复方案与回归用例 |
+| `.ship/verify/<slug>.md` | `ship-verify` | `ship-commit` / `ship-finish` / `Lead` | 命令证据、未覆盖范围、PASS/FAIL/PARTIAL 裁决与提交 SHA 绑定 |
+| `.ship/review/<slug>.md` | `ship-review` | `ship-commit` / `ship-finish` / `Lead` | 分级发现、READY/BLOCKED/INCOMPLETE 裁决与提交 SHA 绑定 |
 
 ## 3. 控制权与门禁原则
 
 - **Skill 不互相自动调用**：`ship-auto` 只推荐下一步，所有阶段推进都可控、可复核。
-- **验证与审查不合并省略**：`ship-verify` 关注“代码能否跑通测试与检查”，`ship-review` 关注“设计、数据、并发与范围有没有线上隐患”。
+- **验证与审查不合并省略**：`ship-verify` 关注“代码能否跑通测试与检查”，`ship-review` 关注“设计、数据、并发与范围有没有线上隐患”。两者的结论必须落盘为 `.ship/verify/` 与 `.ship/review/` 记录，`ship-finish` 仅凭记录核验，不依赖对话记忆。
 - **验证缺口不冒充 READY**：`ship-verify` 为 `PARTIAL` 或必需门禁未运行时，`ship-review` 必须输出 `INCOMPLETE`，不得进入 `ship-commit`。
 - **Git 提交始终受控**：`ship-commit` 只负责合规校验与生成消息，实际 `git commit` / `push` / 合并动作必须由用户授权。
