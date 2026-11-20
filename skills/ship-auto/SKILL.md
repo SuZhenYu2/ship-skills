@@ -23,8 +23,8 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
    - 对照 `references/git-branch-policy.md` 校验当前分支是否合规；若处于 `main` / `master` 且存在未提交改动，优先提示切换合规分支。
    - 尝试从分支名末尾提取飞书需求 ID（`<req-id>`）候选。
 2. **检查 `.ship/` 黑板与长期文档**
-   - 检查 `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`，以及根目录 `CONTEXT.md` 与 `docs/adr/`。
-   - 读取文档头 `Status`：`DRAFT` / `STUCK` 不得直接推荐实现；`APPROVED` 只代表方案通过，不代表代码或测试完成；`IMPLEMENTED` / `FIXED` 仍需验证与审查证据。
+   - 检查 `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`、`.ship/verify/`、`.ship/review/`，以及根目录 `CONTEXT.md` 与 `docs/adr/`。
+   - 读取文档头 `Status`（枚举与语义见 `references/dev-baseline.md`）：spec `DRAFT` / `STUCK` 或 plan `DRAFT` / `REVISE` 不得直接推荐实现；spec `ALIGNED` / plan `APPROVED` 只代表方案对齐，不代表代码或测试完成；`IMPLEMENTED` / `FIXED` 仍需验证与审查记录证据。
 3. **判断当前阶段并给出唯一推荐**
    - 需求存在关键缺口、隐藏假设或涉及不可逆权衡/术语对齐 → 推荐 **`ship-grill`**（只需快速写 spec 则推荐 `ship-spec`）。
    - 已有 spec 但涉及多模块/高风险改动且无 plan → 推荐 `ship-plan`。
@@ -33,6 +33,7 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
    - 已有代码改动但尚未跑验证 → 推荐 `ship-verify`。
    - 验证已通过、准备提交前 → 推荐 `ship-review`。
    - 审查为 `INCOMPLETE`（必需验证门禁未运行或为 `PARTIAL`）→ 补验证后复审，不推荐 `ship-commit`。
+   - verify 记录非 `PASS` 或 review 记录非 `READY`（含记录缺失）→ 推荐补跑 `ship-verify` / `ship-review`，不推荐 `ship-commit` / `ship-finish`。
    - 审查已 `READY`、准备生成提交信息 → 推荐 `ship-commit`。
    - 已完成全部提交、准备提 PR / 收尾 → 推荐 `ship-finish`。
 

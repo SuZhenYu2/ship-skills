@@ -17,3 +17,7 @@ jobs:
         run: bash scripts/test-git-policy.sh
       - name: Test task arena state
         run: bash scripts/test-arena-state.sh
+      - name: Test validator regressions
+        run: bash scripts/test-validate-skills.sh
+      - name: Test eval fixtures
+        run: bash evals/fixtures/test-fixtures.sh

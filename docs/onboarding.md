@@ -65,4 +65,4 @@ bash scripts/install.sh --target all --upgrade
    ```gitignore
    .ship/
    ```
-   如果团队希望把 `.ship/specs/` 或 `.ship/plans/` 纳入版本库归档，可仅忽略临时文件。
+   如果团队希望把 `.ship/specs/`、`.ship/plans/` 或 verify/review 证据记录纳入版本库归档（跨机器收尾审计需要），可仅忽略临时文件。

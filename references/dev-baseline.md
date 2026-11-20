@@ -50,8 +50,31 @@
 - `.ship/specs/<slug>.md`：需求对齐与验收契约（`ship-spec`）
 - `.ship/plans/<slug>.md`：实施方案、共享契约、文件白名单与测试矩阵（`ship-plan`）
 - `.ship/fixes/<slug>.md`：复杂故障的复现步骤、根因链条与回归测试记录（`ship-fix`）
+- `.ship/verify/<slug>.md`：验证证据记录（`ship-verify`）
+- `.ship/review/<slug>.md`：审查裁决记录（`ship-review`）
 
 `<slug>` 使用小写英文短横线命名（如 `order-timeout-cancel`）。简单任务不必强行生成文件，可在对话中直接交付。
+
+### 验证/审查记录契约
+
+`ship-verify` 与 `ship-review` 除对话输出外，必须落盘可跨会话核验的记录：
+
+- `<slug>` 优先复用关联 spec/plan/fix 的 slug；无关联文档时取分支描述段或任务短名。
+- 文档头固定包含 `> Status:`、`> Date: <YYYY-MM-DD HH:mm>`、`> HEAD: <验证时 git rev-parse HEAD>`、`> index tree: <git write-tree>`。verify 的 Status 为 `PASS | FAIL | PARTIAL`，review 的 Status 为 `READY | BLOCKED | INCOMPLETE`。
+- 面向提交的验证/审查前，由 Lead 确认范围并按授权把本次改动全部暂存；存在未暂存修改或非忽略的未跟踪文件时，不得为 index 树签发 PASS/READY。快照一致性由 `check-git-policy.sh --mode handoff` 在提交前强制核验。
+- 正文：verify 放命令证据表与未覆盖范围；review 放裁决、分级发现摘要与对照的 spec/diff 范围。`FAIL` / `PARTIAL` / `BLOCKED` / `INCOMPLETE` 同样落盘。
+- 提交绑定：`ship-commit` 获授权执行 `git commit` 成功后，向对应记录追加 `> Commit: <新提交完整 SHA>`（`git rev-parse HEAD`）。
+- 收尾核验：`ship-finish` 对 `<base>..HEAD` 每条提交（`git log --pretty=%H`），必须找到含该完整 SHA 且 Status 为 `PASS` 的 verify 记录与 `READY` 的 review 记录，并校验 `HEAD^{tree}` 与记录 `index tree` 一致；缺失或不一致即 `BLOCKED`。
+- 记录遵循项目 `.ship/` 的 gitignore 策略；收尾完成前不得删除。
+
+### 产物状态枚举（唯一事实源）
+
+- spec（`.ship/specs/`）：`DRAFT`（仍有未决项）/ `ALIGNED`（关键要求已对齐，无实现阻断）/ `IMPLEMENTED`（已有实现证据）/ `STUCK`（存在具体阻塞决策）。
+- plan（`.ship/plans/`）：`DRAFT`（起草中）/ `APPROVED`（方案通过，不代表代码完成）/ `REVISE`（需修订）。
+- fix（`.ship/fixes/`）：`DIAGNOSED`（根因已定位未修复）/ `PARTIALLY_VERIFIED`（修复部分验证）/ `FIXED`（修复且回归通过）/ `BLOCKED`（存在阻塞）。
+- verify/review 记录状态见上方记录契约。
+
+`ship-auto` 等消费方按本表解读 Status，不得自造状态词。spec 的 `ALIGNED` 与 plan 的 `APPROVED` 都只代表方案对齐，不代表实现或验证完成。
 
 ## 6. 授权与安全红线
 

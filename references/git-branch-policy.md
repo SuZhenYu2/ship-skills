@@ -17,7 +17,7 @@
 > 说明：
 > - `<id>` 为飞书项目中的系统需求 / 问题 / 缺陷 ID。
 > - 禁止直接在受保护基线分支（如 `main` / `master`）上进行业务开发与直接提交。
-> - **默认切出与合入基线**：`[待按团队实际补充：例如 feature 从 master/release 切出、合入 release-yyyyMMdd；hotfix 从 master 切出、合入 master 与当前 release]`。
+> - **默认切出与合入基线**（可覆盖默认值）：feature/hotfeat 从 `master` 或当前 `release-yyyyMMdd` 切出，合入 `release-yyyyMMdd`；hotfix 从 `master` 切出，合入 `master` 与当前 `release`；dev 从 `master` 切出。团队实际不同时在此覆盖；`ship-finish` 的 `--base` 未指明时按本默认向用户确认。
 
 ## 2. Commit Message 强约束（飞书系统需求 ID）
 
