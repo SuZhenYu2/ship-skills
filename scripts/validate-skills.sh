@@ -5,60 +5,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # frontmatter 必须用真实 YAML 解析器严格校验；缺失时硬失败，不降级为字面值检查
-YAML_PARSER=""
-if command -v ruby >/dev/null 2>&1; then
-  YAML_PARSER="ruby"
-elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-  YAML_PARSER="python3"
-else
-  echo "[ERROR] 未找到 YAML 解析器（ruby 或 python3+PyYAML），无法严格校验 SKILL.md frontmatter。" >&2
+if ! command -v ruby >/dev/null 2>&1; then
+  echo "[ERROR] 未找到 YAML 解析器（ruby），无法严格校验 SKILL.md frontmatter。" >&2
   exit 1
 fi
 
 parse_frontmatter() {
   local skill_file="$1" dir_name="$2"
-  if [[ "${YAML_PARSER}" == "ruby" ]]; then
-    ruby -ryaml -e '
-      raw = File.read(ARGV[0])
-      expected = ARGV[1]
-      fm = raw.split(/^---\s*$/)[1]
-      abort "[ERROR] #{expected}/SKILL.md 缺少 YAML frontmatter" if fm.nil?
-      begin
-        data = YAML.safe_load(fm)
-      rescue => e
-        abort "[ERROR] #{expected}/SKILL.md frontmatter YAML 解析失败: #{e.message}"
-      end
-      abort "[ERROR] #{expected}/SKILL.md frontmatter 不是键值映射" unless data.is_a?(Hash)
-      name = data["name"]
-      desc = data["description"]
-      abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 name 字段" unless name.is_a?(String) && !name.strip.empty?
-      abort "[ERROR] #{expected}/SKILL.md 的 name (#{name}) 与目录名不一致" if name != expected
-      abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 description 字段" unless desc.is_a?(String) && !desc.strip.empty?
-    ' "${skill_file}" "${dir_name}"
-  else
-    python3 - "${skill_file}" "${dir_name}" <<'PY'
-import re, sys
-import yaml
-path, expected = sys.argv[1], sys.argv[2]
-raw = open(path, encoding="utf-8").read()
-parts = re.split(r"^---\s*$", raw, flags=re.M)
-if len(parts) < 2:
-    sys.exit(f"[ERROR] {expected}/SKILL.md 缺少 YAML frontmatter")
-try:
-    data = yaml.safe_load(parts[1])
-except yaml.YAMLError as e:
-    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter YAML 解析失败: {e}")
-if not isinstance(data, dict):
-    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 不是键值映射")
-name, desc = data.get("name"), data.get("description")
-if not isinstance(name, str) or not name.strip():
-    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 缺少 name 字段")
-if name != expected:
-    sys.exit(f"[ERROR] {expected}/SKILL.md 的 name ({name}) 与目录名不一致")
-if not isinstance(desc, str) or not desc.strip():
-    sys.exit(f"[ERROR] {expected}/SKILL.md frontmatter 缺少 description 字段")
-PY
-  fi
+  ruby -EUTF-8 -ryaml -e '# encoding: utf-8
+    raw = File.read(ARGV[0], encoding: "UTF-8")
+    expected = ARGV[1]
+    fm = raw.split(/^---\s*$/)[1]
+    abort "[ERROR] #{expected}/SKILL.md 缺少 YAML frontmatter" if fm.nil?
+    begin
+      data = YAML.safe_load(fm)
+    rescue => e
+      abort "[ERROR] #{expected}/SKILL.md frontmatter YAML 解析失败: #{e.message}"
+    end
+    abort "[ERROR] #{expected}/SKILL.md frontmatter 不是键值映射" unless data.is_a?(Hash)
+    name = data["name"]
+    desc = data["description"]
+    abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 name 字段" unless name.is_a?(String) && !name.strip.empty?
+    abort "[ERROR] #{expected}/SKILL.md 的 name (#{name}) 与目录名不一致" if name != expected
+    abort "[ERROR] #{expected}/SKILL.md frontmatter 缺少 description 字段" unless desc.is_a?(String) && !desc.strip.empty?
+  ' "${skill_file}" "${dir_name}"
 }
 
 ERRORS=0
@@ -74,13 +44,22 @@ required_files=(
   "docs/workflow.md"
   "docs/multi-agent-policy.md"
   "docs/onboarding.md"
+  "docs/ship-arena-design.md"
+  "docs/difficulty-loop-design.md"
   "evals/calibration-cases.md"
   "scripts/install.sh"
   "scripts/check-git-policy.sh"
   "scripts/test-git-policy.sh"
   "scripts/arena-state.sh"
+  "scripts/arena-state.ts"
   "scripts/test-arena-state.sh"
+  "scripts/test-arena-state.ts"
+  "scripts/loop-state.sh"
+  "scripts/loop-state.ts"
+  "scripts/test-loop-state.sh"
+  "scripts/test-loop-state.ts"
   "references/arena-policy.md"
+  "references/loop-policy.md"
   "scripts/test-validate-skills.sh"
   "evals/fixtures/build-fixtures.sh"
   "evals/fixtures/test-fixtures.sh"
@@ -147,7 +126,7 @@ fi
 for installed_skill in "${TMP_INSTALL}"/ship-*; do
   [[ -d "${installed_skill}" ]] || continue
   installed_name="$(basename "${installed_skill}")"
-  for required in references/dev-baseline.md references/arena-policy.md docs/multi-agent-policy.md scripts/check-git-policy.sh scripts/arena-state.sh; do
+  for required in references/dev-baseline.md references/arena-policy.md references/loop-policy.md docs/multi-agent-policy.md scripts/check-git-policy.sh scripts/arena-state.sh scripts/arena-state.ts scripts/loop-state.sh scripts/loop-state.ts; do
     if [[ ! -f "${installed_skill}/${required}" ]]; then
       echo "[ERROR] 安装后 ${installed_name} 缺少 ${required}" >&2
       ERRORS=$((ERRORS + 1))
@@ -165,6 +144,10 @@ for installed_skill in "${TMP_INSTALL}"/ship-*; do
 done
 
 for script in "${REPO_ROOT}"/scripts/*.sh "${REPO_ROOT}"/evals/fixtures/*.sh; do
+  if [[ ! -x "${script}" ]]; then
+    echo "[ERROR] 脚本缺少可执行权限 (+x): ${script#${REPO_ROOT}/}" >&2
+    ERRORS=$((ERRORS + 1))
+  fi
   if ! bash -n "${script}"; then
     echo "[ERROR] Shell 语法错误: $(basename "${script}")" >&2
     ERRORS=$((ERRORS + 1))

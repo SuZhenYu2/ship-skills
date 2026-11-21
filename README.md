@@ -22,7 +22,7 @@
 
 ## 快速开始
 
-依赖 Bash、Git 与 `python3`；Arena 后端仅使用 Python3 标准库。安装或升级使用下列命令，升级后重新加载 Skill；不要只复制 SKILL.md 而遗漏附带协议和脚本。
+依赖 Bash、Git 与支持原生运行 TypeScript 的 Node.js（推荐 Node 22.18+ / 24+）；Arena 与 Loop 状态后端均为零第三方依赖的 TypeScript，不依赖 Python。安装或升级使用下列命令，升级后重新加载 Skill；不要只复制 SKILL.md 而遗漏附带协议和脚本。
 
 ```bash
 # 1. 自检仓库完整性

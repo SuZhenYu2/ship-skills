@@ -13,7 +13,7 @@
 
 - `<ship-stage>` 为当前 Skill 名（如 `ship-plan`）。脚本由安装包提供，路径相对 Skill，`--repo` 指向业务仓库。
 - `ship-arena` 的 on/off 在确认任务后直接执行对应动作，无需前置 status，不递归调用自身。on/off 除写状态外，还会将 `/.ship/` 追加到 Git 本地 `info/exclude`（通过 `git rev-parse --git-path info/exclude` 定位），不修改业务 `.gitignore`。这是本地 Git 元数据写入，执行前须披露；若用户禁止任何 Git 元数据写入，先说明冲突并确认，不擅自执行。它不等于授权提交、暂存或其他 Git 操作。
-- 状态仅存于目标仓库 `.ship/tasks/<id>/arena.json`，协议为 `version=1`、`enabled` 布尔值、`policy=selective`、`candidates=2`。缺文件默认 off；读取 status 不应创建状态文件。损坏、版本/字段不合法、脚本缺失或 Python3 不可用均须报告并暂停，不得静默当成 off。
+- 状态仅存于目标仓库 `.ship/tasks/<id>/arena.json`，协议为 `version=1`、`enabled` 布尔值、`policy=selective`、`candidates=2`。缺文件默认 off；读取 status 不应创建状态文件。损坏、版本/字段不合法、脚本缺失或 Node.js 不可用均须报告并暂停，不得静默当成 off。
 - 每次显式 on/off 都生成新的 `generation`（32 位十六进制标识），status 只读并显示该标识。旧版配置缺少 generation 时显示“未绑定批次”，必须显式 on 后才能派发候选，不静默升级或恢复旧产物。
 - status 表达配置与**计划采用的策略**，不表示候选已派发、已完成或已通过评审。执行事实单独报告。
 

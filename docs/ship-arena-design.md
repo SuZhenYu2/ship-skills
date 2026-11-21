@@ -13,7 +13,7 @@ bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> off
 bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-plan
 ```
 
-以上为互斥操作示例。`<root>` 必须是 Git 工作区根；任务 ID 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。由 Bash 入口调用 Python3 标准库后端；不依赖外部 Python 包。
+以上为互斥操作示例。`<root>` 必须是 Git 工作区根；任务 ID 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。由 Bash 入口调用零第三方依赖的 TypeScript（Node.js 原生运行）后端，不依赖 Python。
 
 状态位于目标仓库 `.ship/tasks/<id>/arena.json`：
 
