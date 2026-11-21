@@ -23,7 +23,11 @@
 | `dev-skills` | 插件目录下的 11 个 `dev-*` Skill | 对照组 |
 | `bare-model` | 不装任何技能 | 基线，用来判断技能是否真的有用 |
 
-三臂各自使用独立的 `CODEX_HOME`，只继承 provider 连接块与模型目录，**丢弃**用户配置中的 `hooks`、`mcp_servers`、`projects`、`tui`；并在配置里显式关闭 `hooks`、`multi_agent`、`enable_fanout`，避免外部能力差异污染结果。`auth.json` 复制进隔离 home 后置为 600 权限。
+三臂各自建立内容封存的 home 模板，每次运行从模板复制独立的 `HOME` / `CODEX_HOME`，不复用 sessions/history。只继承 provider 连接块与模型目录，**丢弃**用户配置中的 `hooks`、`mcp_servers`、`projects`、`tui`；并在配置里显式关闭 `hooks`、`multi_agent`、`enable_fanout`。`auth.json` 复制进 home 后置为 600 权限。此评测不覆盖 Arena 的真实多 Agent 编排，不能据此证明 Arena 有效。
+
+执行进程额外通过 macOS Seatbelt（`sandbox-exec`）或 Linux bubblewrap 限制文件读取：仅可读取系统运行时、明确的执行器文件与本次 run，可写本次 run；原有 Codex `workspace-write` 及禁网配置保持不变。金标准、兄弟运行、上游仓库不得置于系统运行时白名单内。沙箱缺失、不受支持或启动失败时该次运行失败，不回退为无隔离执行；`isolation.json` 记录请求的后端，不单凭该文件证明隔离有效。默认不放行用户级依赖缓存或自定义安装目录；需要这些环境的任务应先准备受控运行环境，不临时放宽到用户目录。
+
+沙箱回归单独测试真实父子进程无法读取金标准、兄弟运行、上游文件及指向它们的符号链接；跑批契约测试使用离线模型与沙箱替身，不把替身通过当作真实隔离证据。
 
 臂字母在 `setup.sh` 里随机分配，顺序不固定，避免「A 组总是先跑」一类顺序效应。
 
@@ -56,7 +60,9 @@ T04 的夹具在构建时会**自证**：把修复改回缺陷版本后测试仍
 
 ### 4.3 操纵检查（有效性前提）
 
-每次运行后检查该臂的技能目录是否真的出现在会话上下文中。裸模型臂应为 0，两个处理臂应大于 0，否则该次运行**不构成有效处理**，必须剔除并补跑。`manipulation.json` 记录这一结果。
+启动前检查本次安装副本与封存模板一致，写入 `manipulation.json.discovery_ok`；裸模型应没有技能，处理臂应具有预注册技能。这只证明安装可用，不证明模型加载或调用过技能。只有本次 events 中匹配已安装技能的结构化 `skill.invoked` 事件才能将 `invocation_status` 标记为 confirmed；无该事件为 unknown，裸模型为 not_applicable。提示词提及、文本自述和旧 session 不作为调用证据。
+
+allocation 冻结 `natural` / `explicit` 激活模式。natural 保持中性提示，衡量整套工具可用时的行为；explicit 明确请求任务入口技能，`requested_skill` 单独记录，但仍不能据此宣称已调用。两种模式不得混合统计；unknown 不得解释为“已证实技能处理生效”。
 
 首次冒烟暴露了两个真实问题，已修复：
 

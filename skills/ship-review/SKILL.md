@@ -11,6 +11,10 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
 
 先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-review`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。两路独立审查仍由 Lead 按证据裁决，不能以多数票跳过最终快照门禁。
 
+## Loop 入口与记账
+
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-review`。失败暂停；UNINITIALIZED 不自动 init/record。ACTIVE 时核对 Verify 交付的 cycle、round 与证据 slug，不重新领取轮次；TRIPPED/ESCALATED 不启动新尝试。BLOCKED/INCOMPLETE 落盘后由 Lead 携带原 cycle/round、错误签名和实际证据路径 record blocked 一次；READY 时由 Lead 在快照授权范围内执行 `record --stage ship-review --outcome pass --slug <slug> --cycle <本轮cycle> --round <本轮序号>`。脚本复用 handoff 门禁，失败不能宣称 Loop 收敛；重复或旧周期记录不得换新标签重试。CONVERGED 后若代码变化，重验并经确认 reset，不沿用旧收敛状态。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md`、`references/review-checklist.md` 与 `references/git-branch-policy.md`。

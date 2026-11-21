@@ -11,6 +11,10 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
 
 先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-verify`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。同一最终快照独立验证，事实不投票；最终整合快照必须重跑真实门禁，冲突命令串行执行。
 
+## Loop 入口与交接
+
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-verify`。失败暂停；UNINITIALIZED 不自动 init/record。ACTIVE 时核对上游交付的 cycle 与 round，不因阶段切换增加轮次；直接进入本阶段时由 Lead 明确本轮标识。TRIPPED/ESCALATED 仅补充诊断或升级，不开启新尝试。FAIL/PARTIAL 落盘后，Lead 携带原 cycle/round、非空错误签名和证据路径 record fail/blocked 一次并结束本轮；PASS 不 record，连同标识与证据 slug 交给 Review。已经记账的尝试不得在 Review 再记一次。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md` 中的“证据优先原则”。
@@ -30,6 +34,7 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
 3. **执行验证并记录证据**
    - 依次运行：编译/类型检查 → 受影响模块的单元测试 →（按风险或用户要求）全量测试与静态检查。
    - 若处于 Multi-Agent 模式，建议由独立上下文的 `Critic`（或 `Verifier`）执行，避免与实现线程共享隐藏状态。
+   - Arena 默认由两路独立分析验证范围、Lead 协调命令；共享输出目录时串行，读取同一份输出只能称“两路分析、一次执行”。需要两次独立执行时，Lead 按 `references/arena-policy.md` 准备同一快照的独占副本，并记录执行者、快照、工作目录、退出码与输出；候选不能改原工作区或自行创建 worktree。
    - 验证过程中 代码树、验证范围或 `.ship/` 外工作区发生变化时，必须重新记录证据对象并对最终快照重跑，不能沿用旧结论。
 4. **处理失败与缺口**
    - 任一命令失败时，直接报告失败命令、退出码与关键错误摘要，禁止静默忽略或跳过。

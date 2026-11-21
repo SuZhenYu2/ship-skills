@@ -28,3 +28,5 @@ jobs:
         run: bash scripts/test-validate-skills.sh
       - name: Test eval fixtures
         run: bash evals/fixtures/test-fixtures.sh
+      - name: Test offline duel harness
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s evals/duel/tests -v

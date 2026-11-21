@@ -36,6 +36,9 @@ interface HistoryEntry {
   outcome: Outcome;
   error_hash: string;
   evidence: string;
+  // Handoff record references and snapshot identity, not proof of command/task semantics.
+  slug?: string;
+  tree?: string;
 }
 
 interface EscalationInfo {
@@ -69,6 +72,9 @@ interface ParsedArgs {
   outcome?: string;
   errorSig?: string;
   evidence?: string;
+  slug?: string;
+  cycle?: string;
+  round?: number;
   target?: string;
   reason?: string;
   action?: Action;
@@ -91,6 +97,9 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     '--outcome',
     '--error-sig',
     '--evidence',
+    '--slug',
+    '--cycle',
+    '--round',
     '--target',
     '--reason',
   ]);
@@ -100,7 +109,10 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     const token = argv[i];
     if (token === '-h' || token === '--help') {
       process.stdout.write(
-        'Usage: loop-state.sh --repo <root> --task <id> [--stage <stage>] <init|status|record|escalate|reset> [options]\n',
+        'Usage: loop-state.sh --repo <root> --task <id> [--stage <stage>] <init|status|record|escalate|reset> [options]\n' +
+        'record: --stage <stage> --outcome pass|fail|blocked --cycle <current> --round <next>\n' +
+        '  pass: ship-review only, --slug <slug>; fail/blocked: --error-sig <text> --evidence <file>\n' +
+        'Lead must serialize writes; ship-verify PASS continues to ship-review, not convergence.\n',
       );
       process.exit(0);
     }
@@ -141,6 +153,18 @@ function parseCliArgs(argv: string[]): ParsedArgs {
           break;
         case '--evidence':
           parsed.evidence = value;
+          break;
+        case '--slug':
+          parsed.slug = value;
+          break;
+        case '--cycle':
+          parsed.cycle = value;
+          break;
+        case '--round':
+          if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) {
+            fail('--round 必须为正安全整数。');
+          }
+          parsed.round = Number(value);
           break;
         case '--target':
           parsed.target = value;
@@ -185,6 +209,32 @@ function runGit(repo: string, args: string[]): string {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+}
+
+function checkPassEvidence(repo: string, slug: string): Pick<HistoryEntry, 'evidence' | 'slug' | 'tree'> {
+  // Delegate snapshot/record checks without staging or committing on the caller's behalf.
+  const output = execFileSync('bash', [
+    path.join(import.meta.dirname, 'check-evidence.sh'),
+    '--mode', 'handoff', '--repo', repo, '--slug', slug,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const match = /^PASS handoff slug=(\S+) tree=([0-9a-f]+)$/.exec(output);
+  if (!match || match[1] !== slug || ![40, 64].includes(match[2].length)) {
+    fail('check-evidence.sh 未返回可识别的 handoff 快照引用。');
+  }
+  return {
+    evidence: `.ship/verify/${slug}.md; .ship/review/${slug}.md`,
+    slug,
+    tree: match[2],
+  };
+}
+
+function checkFailureEvidence(repo: string, evidence: string): string {
+  const evidencePath = path.resolve(repo, evidence);
+  const stat = fs.lstatSync(evidencePath);
+  if (!stat.isFile() || stat.size === 0) {
+    fail('--evidence 必须指向实际存在的非空常规文件（不能是符号链接）。');
+  }
+  return evidencePath;
 }
 
 function isSymlinkIfExists(targetPath: string): boolean {
@@ -340,6 +390,10 @@ function main(): void {
     fail('--max-rounds 必须在 1 到 5 之间。');
   }
 
+  if (action !== 'record' && (args.slug !== undefined || args.cycle !== undefined || args.round !== undefined)) {
+    fail('--slug、--cycle 与 --round 仅用于 record。');
+  }
+
   if (action === 'init' || action === 'reset') {
     if (!args.level || !args.mode) {
       fail(`${action} 必须提供 --level 与 --mode。`);
@@ -367,8 +421,29 @@ function main(): void {
       fail('status 仅支持 --repo、--task 与可选 --stage。');
     }
   } else if (action === 'record') {
-    if (!args.stage || !args.outcome) {
-      fail('record 必须提供 --stage 与 --outcome。');
+    if (!args.stage || !args.outcome || args.cycle === undefined || args.round === undefined) {
+      fail('record 必须提供 --stage、--outcome、--cycle 与 --round。');
+    }
+    if (!/^[0-9a-f]{32}$/.test(args.cycle)) {
+      fail('--cycle 必须为当前状态的 cycle。');
+    }
+    if (args.outcome === 'pass') {
+      if (args.stage !== 'ship-review') {
+        fail('仅 ship-review 可记录 pass；ship-verify PASS 应继续 ship-review，不记录任务收敛。');
+      }
+      if (!args.slug || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(args.slug)) {
+        fail('pass 必须提供有效的 --slug，以检查 verify/review handoff 证据。');
+      }
+      if (args.errorSig !== undefined || args.evidence !== undefined) {
+        fail('pass 不接受 --error-sig 或 --evidence；证据路径由 --slug 确定。');
+      }
+    } else {
+      if (!args.errorSig?.trim() || !args.evidence?.trim()) {
+        fail('fail/blocked 必须提供非空的 --error-sig 与 --evidence。');
+      }
+      if (args.slug !== undefined) {
+        fail('fail/blocked 不接受 pass 专属参数 --slug。');
+      }
     }
     if (
       args.level !== undefined ||
@@ -382,6 +457,9 @@ function main(): void {
   } else if (action === 'escalate') {
     if (!args.target || !args.target.trim() || !args.reason || !args.reason.trim()) {
       fail('escalate 必须提供非空的 --target 与 --reason。');
+    }
+    if (!['ship-plan', 'user'].includes(args.target)) {
+      fail('escalate --target 仅支持 ship-plan | user。');
     }
     if (
       args.level !== undefined ||
@@ -495,16 +573,23 @@ function main(): void {
       if (state.status !== 'ACTIVE') {
         fail(`当前状态为 ${state.status}，禁止继续 record；请先 escalate 或经确认后 reset。`);
       }
+      // Lead serializes writes. These tokens reject stale results, not concurrent writers.
+      if (args.cycle !== state.cycle || args.round !== state.round + 1) {
+        fail(`record 的 cycle/round 已过期或不匹配；需要 --cycle ${state.cycle} --round ${state.round + 1}。`);
+      }
+      const outcome = args.outcome as Outcome;
+      const evidence = outcome === 'pass'
+        ? checkPassEvidence(repo, args.slug as string)
+        : { evidence: checkFailureEvidence(repo, args.evidence as string) };
+      const errHash = outcome !== 'pass' ? normalizeErrorHash(args.errorSig) : '';
       ensureLocalExclude(repo);
       state.round += 1;
-      const outcome = args.outcome as Outcome;
-      const errHash = outcome !== 'pass' ? normalizeErrorHash(args.errorSig) : '';
       state.history.push({
         round: state.round,
         stage: args.stage as string,
         outcome,
         error_hash: errHash,
-        evidence: args.evidence ?? '',
+        ...evidence,
       });
 
       let exitCode = 0;

@@ -13,8 +13,8 @@ const STRATEGIES: Record<string, string> = {
   'ship-tdd': '测试设计与高风险策略比选，不并行业务实现',
   'ship-fix': '独立根因假设证伪与修复方案比选',
   'ship-verify': '同一最终快照独立验证，事实不投票',
-  'ship-review': '独立双视角审查，有效 BLOCKER 必须阻断',
-  'ship-commit': 'Lead 串行提交门禁，仅执行一次 Git 写操作',
+  'ship-review': '独立双视角审查，有效 BLOCKER 或未接受的 MAJOR 必须阻断',
+  'ship-commit': 'Lead 串行提交门禁，代码提交和证据提交分别授权',
   'ship-finish': '独立复核交付证据，Git 收尾仅由 Lead 串行执行',
 };
 
@@ -34,6 +34,8 @@ interface ParsedArgs {
   task?: string;
   stage?: string;
   generation?: string;
+  input?: string;
+  candidate?: string;
   action?: Action;
 }
 
@@ -44,14 +46,14 @@ function fail(message: string): never {
 
 function parseCliArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = { repo: '.' };
-  const valueFlags = new Set(['--repo', '--task', '--stage', '--generation']);
+  const valueFlags = new Set(['--repo', '--task', '--stage', '--generation', '--input', '--candidate']);
 
   let i = 0;
   while (i < argv.length) {
     const token = argv[i];
     if (token === '-h' || token === '--help') {
       process.stdout.write(
-        'Usage: arena-state.sh --repo <root> --task <id> [--stage <stage>] [--generation <hex>] <on|off|status|check>\n',
+        'Usage: arena-state.sh --repo <root> --task <id> [--stage <stage>] <on|off|status|check> [--generation <hex>] [--input <json> --candidate <json>]\n',
       );
       process.exit(0);
     }
@@ -65,6 +67,8 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       else if (token === '--task') parsed.task = value;
       else if (token === '--stage') parsed.stage = value;
       else if (token === '--generation') parsed.generation = value;
+      else if (token === '--input') parsed.input = value;
+      else if (token === '--candidate') parsed.candidate = value;
       continue;
     }
     if (token.startsWith('-')) {
@@ -146,6 +150,48 @@ function atomicWriteJson(filePath: string, data: ArenaState): void {
   }
 }
 
+function checkCandidate(repo: string, args: ParsedArgs): void {
+  function readObject(file: string): Record<string, unknown> {
+    const value: unknown = JSON.parse(fs.readFileSync(path.resolve(repo, file), 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('交接文件必须为 JSON 对象。');
+    return value as Record<string, unknown>;
+  }
+
+  const input = readObject(args.input as string);
+  const candidate = readObject(args.candidate as string);
+  if (input.repo !== repo || input.task !== args.task || input.generation !== args.generation ||
+      typeof input.stage !== 'string' || !Object.hasOwn(STRATEGIES, input.stage) ||
+      (args.stage !== undefined && input.stage !== args.stage) ||
+      typeof input.run_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(input.run_id)) {
+    fail('派发输入的仓库、任务、阶段、run_id 或 generation 无效。');
+  }
+  for (const key of ['repo', 'task', 'stage', 'run_id', 'generation']) {
+    if (candidate[key] !== input[key]) fail(`候选 ${key} 与当前派发输入不一致。`);
+  }
+  for (const value of [input.snapshot, candidate.snapshot]) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('snapshot 必须为对象。');
+    const snapshot = value as Record<string, unknown>;
+    if (typeof snapshot.head !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(snapshot.head) ||
+        typeof snapshot.worktree !== 'string' || !/^[0-9a-f]{64}$/.test(snapshot.worktree)) {
+      fail('snapshot 需要完整 HEAD 与 SHA-256 工作区指纹。');
+    }
+  }
+  const expected = input.snapshot as Record<string, unknown>;
+  const actual = candidate.snapshot as Record<string, unknown>;
+  if (expected.head !== actual.head || expected.worktree !== actual.worktree) {
+    fail('候选输入快照已失效。');
+  }
+  if (typeof candidate.conclusion !== 'string' || !candidate.conclusion.trim()) fail('候选结论不能为空。');
+  for (const key of ['evidence', 'risks', 'assumptions', 'verification']) {
+    const value = candidate[key];
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim()) ||
+        ((key === 'evidence' || key === 'verification') && value.length === 0)) {
+      fail(`候选 ${key} 无效；证据和验证方式不能为空。`);
+    }
+  }
+  process.stdout.write('候选交接字段校验通过；不证明证据真实、权限隔离或最终交付通过。\n');
+}
+
 function main(): void {
   const args = parseCliArgs(process.argv.slice(2));
   const task = args.task as string;
@@ -154,11 +200,16 @@ function main(): void {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(task) || task.length > 100) {
     fail('task 必须为不超过 100 字符的小写字母、数字及分隔短横线。');
   }
-  if (args.stage !== undefined && !(args.stage in STRATEGIES)) {
+  if (args.stage !== undefined && !Object.hasOwn(STRATEGIES, args.stage)) {
     fail(`未知 ship 阶段：${args.stage}`);
   }
   if ((action === 'check') !== Boolean(args.generation)) {
     fail('check 必须提供 --generation；其他操作不得提供该参数。');
+  }
+  if (args.input !== undefined || args.candidate !== undefined) {
+    if (action !== 'check' || !args.input || !args.candidate) {
+      fail('--input 与 --candidate 必须成对提供，且仅用于 check。');
+    }
   }
 
   try {
@@ -194,6 +245,7 @@ function main(): void {
       if (!state.enabled || !state.generation || state.generation !== args.generation) {
         fail('候选批次已失效或未绑定；禁止接收旧结果。');
       }
+      if (args.input && args.candidate) checkCandidate(repo, args);
     }
 
     if (action === 'on' || action === 'off') {

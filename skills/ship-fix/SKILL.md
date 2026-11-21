@@ -11,6 +11,10 @@ description: 排查 Bug 或线上故障：先复现并做假设证伪定位真�
 
 先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-fix`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。Arena 比较根因与证伪建议，实际修复单路进行，不能用假设代替复现证据。
 
+## Loop 入口与交接
+
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-fix`。状态失败暂停；未初始化走常规流程，不自动 init/record。TRIPPED/ESCALATED 不开启新一轮修复；CONVERGED 后新增改动须经确认 reset。ACTIVE 时固定本轮 cycle 与 round=已完成轮次+1，并交接给 Verify/Review；假设证伪步骤不逐条计轮。无法继续的阻塞须保存非空证据，由 Lead record blocked 一次；实际修复返工与 Multi-Agent 共享同一轮次预算。
+
 ## 何时使用 / 何时不用
 
 - **使用**：报错排查、线上缺陷、回归故障、测试失败修复。

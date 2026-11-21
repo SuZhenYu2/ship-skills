@@ -18,10 +18,10 @@ bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage
 状态位于目标仓库 `.ship/tasks/<id>/arena.json`：
 
 ```json
-{"version": 1, "enabled": true, "policy": "selective", "candidates": 2}
+{"version": 1, "enabled": true, "policy": "selective", "candidates": 2, "generation": "0123456789abcdef0123456789abcdef"}
 ```
 
-缺文件默认 off，status 不写文件；损坏、字段/版本非法、路径或运行环境错误均失败并报告，不静默改为 off。on/off 原子更新状态，并向 Git 本地 `info/exclude` 追加 `/.ship/tasks/`，不改业务 `.gitignore`。这是须提前披露的本地 Git 元数据写入，不能说完全不写 Git；禁止此写入时先确认冲突。开关不包含提交、暂存等 Git 操作授权。
+缺文件默认 off，status 不写文件；损坏、字段/版本非法、路径或运行环境错误均失败并报告，不静默改为 off。每次 on/off 原子更新状态并刷新 generation，旧批次立即失效；旧配置缺少 generation 时必须显式 on 后才能派发。脚本维护 Git 本地 `info/exclude` 中的 `/.ship/tasks/`，并将精确匹配的旧 `/.ship/` 规则迁移为该规则，保留其他内容，不改业务 `.gitignore`。这是须提前披露的本地 Git 元数据写入；禁止此写入时先确认冲突。开关不包含提交、暂存等 Git 操作授权。
 
 on/off 确认任务后直接执行，无需前置 status，不递归调用入口。所有其他阶段入口调用 status；安装后的共享路径相对 Skill 目录解析。
 
@@ -59,6 +59,7 @@ OFF 的计划策略为 `标准流程`。配置回显只说明计划，不代表�
 ## 4. 竞争协议与失败语义
 
 - 固定相同任务、已确认验收条件、共同快照（HEAD、相关工作区指纹与用户已有改动）、硬约束、评分维度与预算。需求有歧义先确认，不交给候选投票。
+- 每次派发使用唯一 run-id，按 `references/arena-policy.md` 的 JSON 交接格式绑定 repo/task/stage/run-id/generation/snapshot。接收前 Lead 重算快照，再运行 `arena-state.sh ... check --generation <gen> --input <input.json> --candidate <result.json>`；旧标签不得重写后复用。脚本比对字段，不证明证据真实性、工作区未漂移或权限隔离。
 - 默认两个独立上下文候选，目标仓库只读，输出至独占临时目录。有效产物须真实可读、非空且有阶段结论、证据/路径、风险、假设及验证方式；启动说明或成功退出不是产物。
 - 先按硬约束淘汰，再按正确性、兼容/回滚、复杂度/范围、可验证性比较；分数不能覆盖权限违规、验收失败和证据缺口。Lead 最终裁决，选单一基底并有限吸收兼容改进，不能机械拼接互斥方案。
 - 可选独立只读评委；无法指定/确认模型则披露同模型或未知，不虚构跨模型能力。无并行能力可独立上下文顺序生成；无独立上下文则暂停并询问是否改为普通单路流程，不模拟多 Agent。
@@ -69,7 +70,9 @@ OFF 的计划策略为 `标准流程`。配置回显只说明计划，不代表�
 
 最终融合方案重查契约自洽、验收覆盖和回滚路径；方案可交接不等于代码 PASS。最终整合代码必须重新 `ship-verify` 与独立 `ship-review`，不能借用候选证据直接提交。原有 PASS/FAIL/PARTIAL、READY/BLOCKED/INCOMPLETE 语义不变。
 
-所有提交、暂存、分支/工作树变更等 Git 写操作仅 Lead 获授权后串行执行，子 Agent 禁止。Skill 提示词提供协作约定，不保证运行时权限硬隔离或硬拦截。
+所有提交、暂存、分支/工作树变更等 Git 写操作仅 Lead 获授权后串行执行，子 Agent 禁止。脚本提供状态和交接字段校验，Lead 负责协议履行，宿主提供实际权限与执行隔离；不将三者混为“硬保证”。
+
+Verify 默认两路分析、Lead 协调真实命令，共享目录时串行；读取同一份输出不能声称两次独立执行。独立执行须由 Lead 准备同一快照的独占副本并记录工作目录、执行者与原始结果。Arena 不提供自动调度或跨会话恢复；重派预算与 Loop/多 Agent 的实际代码返工预算分开，不相互重置。
 
 ## 6. 验收关注点
 
