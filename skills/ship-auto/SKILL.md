@@ -9,7 +9,12 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
 
 ## Arena 与 Loop 只读入口
 
-1. 读取 `references/arena-policy.md` 与 `references/loop-policy.md`，确认仓库根 `<root>` 与任务 `<id>`；不明确先询问，不猜全局 active task。
+1. 读取 `references/arena-policy.md` 与 `references/loop-policy.md`，按以下规则确认仓库根 `<root>` 与任务 `<id>`：
+   - 仓库根用 `git rev-parse --show-toplevel` 获取；位于子目录时不要用当前目录代替。
+   - 已有 `.ship/tasks/*/loop.json` 或 `arena.json` 时，列出候选让用户选择，禁止猜“全局 active task”。
+   - 新任务且没有现成 ID 时，从任务标题提炼 kebab-case 候选 slug（小写字母、数字、单个短横线，≤100 字符），检查 `.ship/tasks/` 无冲突后展示给用户确认；确认后**任务 ID 默认等于任务 slug**，Loop、Arena 与证据 `Task` 共用该值。
+   - 用户明确不启用 Loop 时仍使用该 slug 作为 `Task`；提交走 `--no-loop`，记录写 `Cycle/Round: none`。
+   - 飞书 `<req-id>` 不能自动生成；缺失时仍按 `references/git-branch-policy.md` 阻断。
 2. 分别执行只读状态查询（不写文件），保留脚本实际回显（仅表示配置与当前状态，不代表已执行候选或循环）：
 
    ```bash
@@ -28,9 +33,10 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
 ## 执行步骤
 
 1. **检查 Git 状态与分支合规性**
-   - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（或执行只读 `git branch --show-current` / `git status --short` / `git log -n 3 --oneline`）。
+   - 先运行 `git rev-parse --is-inside-work-tree`。非 Git 项目跳过分支与 `<req-id>` 检查，报告 `vcs=none`，直接进入步骤 2。
+   - Git 项目优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（或执行只读 `git branch --show-current` / `git status --short` / `git log -n 3 --oneline`）。
    - 对照 `references/git-branch-policy.md` 校验当前分支是否合规；若处于 `main` / `master` 且存在未提交改动，优先提示切换合规分支。
-   - 尝试从分支名末尾提取飞书需求 ID（`<req-id>`）候选。
+   - Git 项目尝试从分支名末尾提取飞书需求 ID（`<req-id>`）候选。
 2. **检查 `.ship/` 黑板与长期文档**
    - 检查 `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`、`.ship/verify/`、`.ship/review/`，以及根目录 `CONTEXT.md` 与 `docs/adr/`。
    - 读取文档头 `Status`：`DRAFT` / `STUCK` 不得直接推荐实现；`APPROVED` 只代表方案通过，不代表代码或测试完成；`IMPLEMENTED` / `FIXED` 仍需验证与审查证据。
@@ -57,7 +63,7 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
 
 ## 输出格式（仅对话输出，不生成文件）
 
-- **当前状态**：分支名（合规/不合规）、提取到的 `<req-id>`、工作区改动摘要、`.ship/` 文档状态，以及 `arena-state.sh` / `loop-state.sh` 原始回显。
+- **当前状态**：VCS 模式（`git` / `none`）、分支名（合规/不合规，非 Git 为不适用）、提取到的 `<req-id>`、工作区改动摘要、`.ship/` 文档状态，以及 `arena-state.sh` / `loop-state.sh` 原始回显。
 - **难度评估与工具路由**：定级结论（`L1` / `L2` / `L3`）、命中依据、推荐 `mode`、`ship-arena` 建议，以及（未初始化时）可直接复制的 `loop-state.sh init` 命令。
 - **Loop 决策**：明确写出“建议启用 / 明确跳过”、用户是否已确认，以及实际执行或待执行的 init 命令。
 - **推荐下一步**：唯一推荐的 Skill 名称 + 可直接复制的下一条指令（结束时声明：除用户确认后的 Loop init 外，本次执行为只读导航）。

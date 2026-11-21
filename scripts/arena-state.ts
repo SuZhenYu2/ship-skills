@@ -150,7 +150,7 @@ function atomicWriteJson(filePath: string, data: ArenaState): void {
   }
 }
 
-function checkCandidate(repo: string, args: ParsedArgs): void {
+function checkCandidate(repo: string, args: ParsedArgs, isGit: boolean): void {
   function readObject(file: string): Record<string, unknown> {
     const value: unknown = JSON.parse(fs.readFileSync(path.resolve(repo, file), 'utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('交接文件必须为 JSON 对象。');
@@ -171,9 +171,14 @@ function checkCandidate(repo: string, args: ParsedArgs): void {
   for (const value of [input.snapshot, candidate.snapshot]) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('snapshot 必须为对象。');
     const snapshot = value as Record<string, unknown>;
-    if (typeof snapshot.head !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(snapshot.head) ||
+    if (typeof snapshot.head !== 'string' ||
+        (isGit
+          ? !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(snapshot.head)
+          : snapshot.head !== 'none') ||
         typeof snapshot.worktree !== 'string' || !/^[0-9a-f]{64}$/.test(snapshot.worktree)) {
-      fail('snapshot 需要完整 HEAD 与 SHA-256 工作区指纹。');
+      fail(isGit
+        ? 'snapshot 需要完整 HEAD 与 SHA-256 工作区指纹。'
+        : '非 Git snapshot 需要 head=none 与 SHA-256 工作区指纹。');
     }
   }
   const expected = input.snapshot as Record<string, unknown>;
@@ -214,9 +219,18 @@ function main(): void {
 
   try {
     const repo = fs.realpathSync(args.repo);
-    const topLevel = fs.realpathSync(runGit(repo, ['rev-parse', '--show-toplevel']));
+    if (!fs.statSync(repo).isDirectory()) {
+      fail('--repo 必须指向目录。');
+    }
+    let isGit = true;
+    let topLevel = repo;
+    try {
+      topLevel = fs.realpathSync(runGit(repo, ['rev-parse', '--show-toplevel']));
+    } catch {
+      isGit = false;
+    }
     if (topLevel !== repo) {
-      fail('--repo 必须指向 Git 工作区根目录。');
+      fail('--repo 必须指向项目根目录（Git 工作区根或非 Git 项目根）。');
     }
 
     const shipDir = path.join(repo, '.ship');
@@ -245,28 +259,30 @@ function main(): void {
       if (!state.enabled || !state.generation || state.generation !== args.generation) {
         fail('候选批次已失效或未绑定；禁止接收旧结果。');
       }
-      if (args.input && args.candidate) checkCandidate(repo, args);
+      if (args.input && args.candidate) checkCandidate(repo, args, isGit);
     }
 
     if (action === 'on' || action === 'off') {
-      const excludeRaw = runGit(repo, ['rev-parse', '--git-path', 'info/exclude']);
-      const excludePath = path.isAbsolute(excludeRaw) ? excludeRaw : path.join(repo, excludeRaw);
-      const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'latin1') : '';
-      const tasks = '/.ship/tasks/';
-      let hasTasks = existing.split(/\r?\n/).includes(tasks);
-      let updated = existing.split(/(?<=\n)/).map((line) => {
-        if (line.replace(/\r?\n$/, '') !== '/.ship/') return line;
-        if (hasTasks) return '';
-        hasTasks = true;
-        return line.replace('/.ship/', tasks);
-      }).join('');
-      if (!hasTasks) {
-        const eol = existing.includes('\r\n') ? '\r\n' : '\n';
-        updated += `${existing && !existing.endsWith('\n') ? eol : ''}${tasks}${eol}`;
-      }
-      if (updated !== existing) {
-        fs.mkdirSync(path.dirname(excludePath), { recursive: true });
-        fs.writeFileSync(excludePath, updated, 'latin1');
+      if (isGit) {
+        const excludeRaw = runGit(repo, ['rev-parse', '--git-path', 'info/exclude']);
+        const excludePath = path.isAbsolute(excludeRaw) ? excludeRaw : path.join(repo, excludeRaw);
+        const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'latin1') : '';
+        const tasks = '/.ship/tasks/';
+        let hasTasks = existing.split(/\r?\n/).includes(tasks);
+        let updated = existing.split(/(?<=\n)/).map((line) => {
+          if (line.replace(/\r?\n$/, '') !== '/.ship/') return line;
+          if (hasTasks) return '';
+          hasTasks = true;
+          return line.replace('/.ship/', tasks);
+        }).join('');
+        if (!hasTasks) {
+          const eol = existing.includes('\r\n') ? '\r\n' : '\n';
+          updated += `${existing && !existing.endsWith('\n') ? eol : ''}${tasks}${eol}`;
+        }
+        if (updated !== existing) {
+          fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+          fs.writeFileSync(excludePath, updated, 'latin1');
+        }
       }
       state.enabled = action === 'on';
       state.generation = randomUUID().replace(/-/g, '');
@@ -284,6 +300,7 @@ function main(): void {
 
     process.stdout.write(`[${label}] Arena: ${enabledText} | 范围: ${task} | 计划策略: ${strategy}\n`);
     process.stdout.write(`generation=${state.generation ?? '未绑定批次；请显式 on 后再派发候选'}\n`);
+    if (!isGit) process.stdout.write('vcs=none\n');
     if (action === 'on' || action === 'off') {
       process.stdout.write(
         state.enabled

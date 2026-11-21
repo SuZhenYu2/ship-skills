@@ -41,6 +41,30 @@ describe('arena-state.ts', () => {
     assert.equal(fs.existsSync(path.join(repo, '.ship')), false);
   });
 
+  it('supports a non-git project root and none head snapshot', () => {
+    const plain = path.join(TMP, `plain-${Math.random().toString(16).slice(2, 8)}`);
+    fs.mkdirSync(plain, { recursive: true });
+    assert.match(runState(plain, ['--task', 'plain', 'status']), /OFF/);
+    assert.match(runState(plain, ['--task', 'plain', 'on']), /ON/);
+    assert.equal(fs.existsSync(path.join(plain, '.git')), false);
+    const statePath = path.join(plain, '.ship/tasks/plain/arena.json');
+    const generation = JSON.parse(fs.readFileSync(statePath, 'utf8')).generation;
+    const input = {
+      repo: fs.realpathSync(plain), task: 'plain', stage: 'ship-plan', run_id: 'plan-1', generation,
+      snapshot: { head: 'none', worktree: 'b'.repeat(64) },
+    };
+    const result = {
+      ...input, conclusion: '选择局部修复', evidence: ['app.py:1'], risks: [], assumptions: [],
+      verification: ['pytest'],
+    };
+    const inputPath = path.join(plain, '.ship/tasks/plain/input.json');
+    const resultPath = path.join(plain, '.ship/tasks/plain/result.json');
+    fs.writeFileSync(inputPath, JSON.stringify(input));
+    fs.writeFileSync(resultPath, JSON.stringify(result));
+    assert.match(runState(plain, ['--task', 'plain', 'check', '--stage', 'ship-plan',
+      '--generation', generation, '--input', inputPath, '--candidate', resultPath]), /不证明证据真实/);
+  });
+
   it('AC5 only excludes task state on a fresh write', () => {
     runState(repo, ['--task', 'x', 'on']);
     for (const [file, status] of [['.ship/specs/x.md', 1], ['.ship/tasks/x/arena.json', 0]] as const) {
@@ -266,10 +290,11 @@ describe('arena-state.ts', () => {
     assert.match(runState(worktree, ['--task', 'linked', 'status']), /ON/);
   });
 
-  it('non-git target rejected', () => {
+  it('non-git target is supported without creating git metadata', () => {
     const other = path.join(TMP, `non-git-${Math.random().toString(16).slice(2, 8)}`);
     fs.mkdirSync(other, { recursive: true });
-    runState(other, ['--task', 'test', 'on'], false);
-    assert.equal(fs.existsSync(path.join(other, '.ship')), false);
+    runState(other, ['--task', 'test', 'on']);
+    assert.equal(fs.existsSync(path.join(other, '.git')), false);
+    assert.equal(fs.existsSync(path.join(other, '.ship', 'tasks', 'test', 'arena.json')), true);
   });
 });

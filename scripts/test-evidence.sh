@@ -202,5 +202,31 @@ git add "$v" "$r"
 git commit -qm legacy-evidence
 expect BLOCKED finish默认拒绝旧证据 "${finish[@]}"
 expect PASS finish仅在显式兼容下接受未启用Loop的旧证据 "${finish[@]}" --no-loop --allow-legacy
+
+ng="$scratch/nongit"
+mkdir -p "$ng/.ship/verify" "$ng/.ship/review"
+printf 'value = 1\n' > "$ng/app.py"
+record_ng() {
+  printf '> Status: %s\n> Date: 2026-11-21 09:30\n> Tree: %s\n> Commit: none\n> Slug: plain\n> Task: plain\n> Cycle: none\n> Round: none\n> Vcs: none\n> Scope: app.py\n' "$2" "$3" > "$1"
+}
+ng_tree=$(bash "$check" --mode snapshot --repo "$ng" | awk '{print $2}')
+record_ng "$ng/.ship/verify/plain.md" PASS "$ng_tree"
+record_ng "$ng/.ship/review/plain.md" READY "$ng_tree"
+handoff_ng=(--mode handoff --slug plain --task plain --no-loop)
+finish_ng=(--mode finish --slug plain --task plain)
+target="$ng" expect PASS 非Git仓库handoff "${handoff_ng[@]}"
+printf 'value = 2\n' > "$ng/app.py"
+target="$ng" expect BLOCKED 非Git快照漂移 "${handoff_ng[@]}"
+printf 'value = 1\n' > "$ng/app.py"
+target="$ng" expect PASS 非Git快照恢复 "${handoff_ng[@]}"
+target="$ng" expect PASS 非Git-finish无需base "${finish_ng[@]}"
+sed 's/^> Vcs: none/> Vcs: git/' "$ng/.ship/review/plain.md" > "$ng/.ship/edited"
+mv "$ng/.ship/edited" "$ng/.ship/review/plain.md"
+target="$ng" expect BLOCKED 非Git拒绝Git凭证 "${handoff_ng[@]}"
+record_ng "$ng/.ship/review/plain.md" READY "$ng_tree"
+sed 's/^> Commit: none/> Commit: pending/' "$ng/.ship/verify/plain.md" > "$ng/.ship/edited"
+mv "$ng/.ship/edited" "$ng/.ship/verify/plain.md"
+target="$ng" expect BLOCKED 非Git拒绝pending "${handoff_ng[@]}"
+
 printf '%s/%s 通过\n' "$((count - failed))" "$count"
 [[ $failed == 0 ]]

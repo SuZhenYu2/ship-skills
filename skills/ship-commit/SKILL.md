@@ -16,6 +16,7 @@ description: "校验当前分支与暂存区改动，优先调用确定性脚本
 - 严格遵循 `references/git-branch-policy.md` 与 `references/dev-baseline.md`。
 - **生成消息 ≠ 通过 Review ≠ 授权提交**；仅当用户明确授权且**零阻塞警告**时才执行 `git commit`。
 - **只暂存代码**：不得混入 `.ship/` 记录；`.ship/` 外有未暂存修改或非忽略的未跟踪文件时停止，不擅自 `git add` 或 `git stash`。
+- **非 Git 项目**：跳过分支、需求 ID 与 commit message 检查；gate 通过后跳过代码提交与 push，只保留就地证据，并明确报告 `Vcs: none`。
 - **Multi-Agent 红线**：本 Skill 仅限主 Agent（`Lead`）执行，子 Agent 严禁调用。
 
 ## 反偷懒红线（Red Flags）
@@ -26,22 +27,27 @@ description: "校验当前分支与暂存区改动，优先调用确定性脚本
 ## 执行步骤
 
 1. **确定性分支校验与工作区检查**
-   - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（若脚本不在当前仓库路径，则直接执行等价只读 `git branch --show-current` 并对照 `references/git-branch-policy.md` 正则校验）。
-   - 查看 `git status --short` 与 `git diff --cached`；若暂存区为空，提示先确认暂存范围，并指出混入的无关文件或调试残留。
+   - 先运行 `git rev-parse --is-inside-work-tree`。在 Git 项目中，优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（若脚本不在当前仓库路径，则直接执行等价只读 `git branch --show-current` 并对照 `references/git-branch-policy.md` 正则校验）。
+   - 非 Git 项目跳过分支与暂存区检查，直接进入步骤 2；不要执行任何 Git 命令或生成 `<req-id>`。
+   - Git 项目查看 `git status --short` 与 `git diff --cached`；若暂存区为空，提示先确认暂存范围，并指出混入的无关文件或调试残留。
 2. **核对任务与待提交树**
    - 按 `references/loop-policy.md`，创建代码提交前运行 `bash <skill-dir>/scripts/loop-state.sh --repo . --task <id> gate --slug <slug>`。该命令会执行证据 handoff，核对暂存树、同任务同轮的 PASS/READY 与收敛记录；非零退出、脚本缺失或证据不符均阻断。不能只跑 handoff 代替 gate。
    - `UNINITIALIZED` 不自动放行；仅当确认任务未启用 Loop 才附加 `--no-loop`，旧记录另需 `--allow-legacy`。已启用但状态缺失则恢复状态或经确认建立新周期并重验，不按未启用处理。
    - 若 Critic 新增或修改了测试，接收其文件清单；由 Lead 确认纳入范围并按授权暂存，再针对最终快照重新验证与复审。不得自行忽略新增测试或借用旧结论。
 3. **提取并核对飞书需求 ID（`<req-id>`）**
+   - 仅在 Git 项目中执行；非 Git 项目跳过本步骤。
    - 优先从合规分支末尾提取 `<req-id>`；若对话中显式提供新 ID 且与分支不一致，必须先向用户确认。
 4. **生成并校验 Commit Message**
+   - 仅在 Git 项目中执行；非 Git 项目跳过。
    - 格式：`<type>(<req-id>): <scope> <subject>`。
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --mode commit-msg --message "<msg>"` 验证正则通过。
 5. **创建代码提交 C**
-   - 门禁通过且有明确代码提交授权才执行；否则仅报告门禁结果、建议消息与缺项。风险接受不是暂存或提交授权。
+   - Git 项目：门禁通过且有明确代码提交授权才执行；否则仅报告门禁结果、建议消息与缺项。风险接受不是暂存或提交授权。
    - 紧邻 `git commit` 前重跑步骤 2 的 gate，确认暂存树自上次检查后未变化；gate 输出中的 tree 才是本次提交的授权快照。
    - C 创建后立即核对 `git rev-parse C^{tree}` 与 gate 输出的 tree 一致；不一致说明提交了未经门禁检查的树，停止后续操作并报告，不自行 amend 或补证。
+   - 非 Git 项目：不创建 C、不执行 `git commit` 或 `git push`；报告 gate 输出与“证据就地保留，无代码提交”。
 6. **单独固化证据 E**
+   - 仅在 Git 项目中执行提交；非 Git 项目只核对两份记录并报告 `Vcs: none`、`Commit: none`。
    - 若 C 已存在、当前只有证据待固化，走本步骤，不重走代码提交。核对当前 HEAD 为待固化的 C、无暂存代码，并重新核验两份记录；已启用 Loop 时 gate 仍须通过且绑定 `C^{tree}`。只更新 `> Commit:` 为 C 的完整 SHA，不改 `Task/Cycle/Round/Tree`。树不符则重验、复审，不回填树值或重复提交代码。
    - 明确取得证据暂存与证据提交授权，才将本任务的两份记录一起固化；核对暂存路径均在 `.ship/` 内且不含 `.ship/tasks/`。E 的消息同样走步骤 4，例如 `chore(<req-id>): ship 记录 <slug> 验证与审查证据`。E 不需要为自己再生成证据。
 

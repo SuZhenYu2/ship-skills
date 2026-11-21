@@ -7,6 +7,7 @@ import { after, beforeEach, describe, it } from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'loop-state.sh');
+const CHECK = path.join(ROOT, 'scripts', 'check-evidence.sh');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-loop-ts-test-'));
 
 after(() => {
@@ -57,11 +58,11 @@ function rejectLoop(repo: string, task: string, args: string[], message?: RegExp
   const stateFile = statePath(repo, task);
   const before = fs.existsSync(stateFile) ? fs.readFileSync(stateFile) : null;
   const exclude = path.join(repo, '.git/info/exclude');
-  const excludeBefore = fs.readFileSync(exclude);
+  const excludeBefore = fs.existsSync(exclude) ? fs.readFileSync(exclude) : null;
   const output = runLoop(repo, args, 1);
   if (message) assert.match(output, message);
   assert.deepEqual(fs.existsSync(stateFile) ? fs.readFileSync(stateFile) : null, before);
-  assert.deepEqual(fs.readFileSync(exclude), excludeBefore);
+  if (excludeBefore !== null) assert.deepEqual(fs.readFileSync(exclude), excludeBefore);
 }
 
 function handoffFixture(repo: string, task: string, slug = task): { tree: string; records: string[] } {
@@ -88,6 +89,33 @@ function handoffFixture(repo: string, task: string, slug = task): { tree: string
     return relative;
   });
   return { tree, records };
+}
+
+function plainHandoffFixture(dir: string, task: string, slug = task): { tree: string } {
+  fs.writeFileSync(path.join(dir, 'implementation.txt'), 'task implementation\n');
+  const output = execFileSync('bash', [CHECK, '--mode', 'snapshot', '--repo', dir], {
+    encoding: 'utf8',
+  }).trim();
+  const tree = output.split(/\s+/).at(-1) as string;
+  const loop = fs.existsSync(statePath(dir, task)) ? readState(dir, task) : null;
+  for (const [kind, status] of [['verify', 'PASS'], ['review', 'READY']]) {
+    const relative = `.ship/${kind}/${slug}.md`;
+    fs.mkdirSync(path.dirname(path.join(dir, relative)), { recursive: true });
+    fs.writeFileSync(path.join(dir, relative), [
+      `> Status: ${status}`,
+      '> Date: 2026-01-01 12:00',
+      `> Tree: ${tree}`,
+      '> Commit: none',
+      `> Slug: ${slug}`,
+      `> Task: ${task}`,
+      `> Cycle: ${loop?.cycle ?? 'none'}`,
+      `> Round: ${loop ? loop.round + 1 : 'none'}`,
+      '> Vcs: none',
+      '> Scope: task-final fixture; metadata does not attest command execution',
+      '',
+    ].join('\n'));
+  }
+  return { tree };
 }
 
 describe('loop-state.ts', () => {
@@ -213,11 +241,12 @@ describe('loop-state.ts', () => {
     assert.deepEqual(fs.readdirSync(outside), []);
   });
 
-  it('non-git target is rejected', () => {
+  it('non-git target is supported without creating git metadata', () => {
     const other = path.join(TMP, `non-git-${Math.random().toString(16).slice(2, 8)}`);
     fs.mkdirSync(other, { recursive: true });
-    runLoop(other, ['--task', 'test', 'init', '--level', 'L1', '--mode', 'single'], 1);
-    assert.equal(fs.existsSync(path.join(other, '.ship')), false);
+    runLoop(other, ['--task', 'test', 'init', '--level', 'L1', '--mode', 'single']);
+    assert.equal(fs.existsSync(path.join(other, '.git')), false);
+    assert.equal(fs.existsSync(path.join(other, '.ship', 'tasks', 'test', 'loop.json')), true);
   });
 
   it('linked worktree is supported', () => {
@@ -463,6 +492,21 @@ describe('loop-state.ts', () => {
       runLoop(repo, ['--task', task, 'status'], 1);
       runLoop(repo, ['--task', task, 'gate', '--slug', task], 1);
     }
+  });
+
+  it('supports a non-git project root for init, handoff, pass and gate', () => {
+    const plain = path.join(TMP, `plain-${Math.random().toString(16).slice(2, 8)}`);
+    fs.mkdirSync(plain, { recursive: true });
+    const task = 'plain-task';
+    runLoop(plain, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    assert.equal(fs.existsSync(path.join(plain, '.git')), false);
+    assert.match(runLoop(plain, ['--task', task, 'status']), /vcs=none/);
+    const { tree } = plainHandoffFixture(plain, task);
+    runLoop(plain, passArgs(plain, task, task));
+    assert.match(runLoop(plain, ['--task', task, 'gate', '--slug', task]),
+      new RegExp(`PASS gate .*tree=${tree}.*vcs=none`));
+    fs.writeFileSync(path.join(plain, 'implementation.txt'), 'changed after gate\n');
+    rejectLoop(plain, task, ['--task', task, 'gate', '--slug', task], /Tree/);
   });
 
   it('uninitialized mutations are rejected without creating state or changing excludes', () => {

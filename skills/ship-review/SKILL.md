@@ -35,8 +35,9 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
 ## 执行步骤
 
 1. **收集审查输入**
-   - 读取关联的 spec/plan/fix、同 slug 的验证记录、`git status --short` 与 `git diff --cached`。核对 Verify 的 `Task/Cycle/Round/Tree` 与本次输入一致；Lead 采集 `git write-tree`，Critic 不执行该命令。
-   - `.ship/` 记录保持未暂存；若其他路径存在未暂存修改或非忽略的未跟踪文件，列出路径交回 Lead，不签发 READY。
+   - 读取关联的 spec/plan/fix、同 slug 的验证记录与审查范围内的代码。核对 Verify 的 `Task/Cycle/Round/Tree` 与本次输入一致。
+   - Git 项目读取 `git status --short` 与 `git diff --cached`，由 Lead 采集 `git write-tree`，Critic 不执行该命令；非 Git 项目读取工作区并采集内容快照，不执行 Git 命令。
+   - `.ship/` 记录保持未暂存；Git 项目若其他路径存在未暂存修改或非忽略的未跟踪文件，列出路径交回 Lead，不签发 READY。非 Git 项目无法区分“已提交/未提交”，以内容快照与验证记录一致为准。
 2. **逐项对照风险清单审查**
    - 严格按 `references/review-checklist.md` 的六大维度检查：
      1. 正确性与数据一致性
@@ -56,7 +57,7 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
      - 无上述阻断，但缺少同任务、同树的 PASS 或必需审查证据（含 `PARTIAL`）→ `INCOMPLETE`，列出补齐命令。
      - 同任务同树 PASS、必需证据齐全且无阻断 → `READY`。READY 不授权 Git 写操作。
 5. **落盘审查记录**
-   - 按 `references/dev-baseline.md` 将 `Task/Cycle/Round` 等记录头、发现及接受依据写入 `.ship/review/<slug>.md`，包括失败裁决。`check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对两份记录。
+   - 按 `references/dev-baseline.md` 将 `Task/Cycle/Round` 等记录头、发现及接受依据写入 `.ship/review/<slug>.md`，包括失败裁决。Git 项目写 `Commit: pending`（`Vcs: git` 可省略）；非 Git 项目必须写 `Vcs: none`、`Commit: none`，`Tree` 使用与 Verify 相同的 64 位内容快照。`check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对两份记录。
 ## 输出格式（对话输出 + 落盘记录）
 
 - **审查裁决**：`READY` / `BLOCKED` / `INCOMPLETE`

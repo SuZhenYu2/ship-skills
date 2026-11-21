@@ -76,6 +76,28 @@ for rel in "${required_files[@]}"; do
   fi
 done
 
+echo "==> 校验任务 ID 默认规则"
+for rel in "skills/ship-auto/SKILL.md" "references/loop-policy.md"; do
+  if ! grep -Fq '任务 ID 默认等于任务 slug' "${REPO_ROOT}/${rel}"; then
+    echo "[ERROR] ${rel} 缺少任务 ID 默认规则" >&2
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+echo "==> 校验非 Git 交付契约"
+for rel in "skills/ship-auto/SKILL.md" "skills/ship-commit/SKILL.md" "skills/ship-finish/SKILL.md" "skills/ship-arena/SKILL.md"; do
+  if ! grep -Fq '非 Git' "${REPO_ROOT}/${rel}"; then
+    echo "[ERROR] ${rel} 缺少非 Git 项目处理" >&2
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+for rel in "skills/ship-verify/SKILL.md" "skills/ship-review/SKILL.md"; do
+  if ! grep -Fq 'Vcs: none' "${REPO_ROOT}/${rel}"; then
+    echo "[ERROR] ${rel} 缺少非 Git 证据字段 Vcs: none" >&2
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
 echo "==> 校验 skills/ship-*/SKILL.md"
 for skill_dir in "${REPO_ROOT}"/skills/ship-*; do
   [[ -d "${skill_dir}" ]] || continue

@@ -22,9 +22,9 @@
 - **验证缺口不冒充通过**：无已知阻断但必需门禁无法运行时标注 `PARTIAL` / `INCOMPLETE`，不得声称 `READY` 或已可提交。
 - **禁止自动越权**：Skill 之间不自动串行触发；未获明确授权前，不执行 `git commit`、`rebase`、`merge`、`push` 或破坏性清理。
 
-- **任务证据**：specs/plans/fixes/verify/review 入库，仅 `.ship/tasks/` 保持本地。Verify/Review 记录 Status、Date、Tree、Commit、Slug、Task、Cycle、Round、Scope；Tree 绑定代码快照，Commit 只供追溯。
+- **任务证据**：specs/plans/fixes/verify/review 入库，仅 `.ship/tasks/` 保持本地。Verify/Review 记录 Status、Date、Tree、Commit、Slug、Task、Cycle、Round、Vcs、Scope；Git 项目 Tree 绑定代码树，非 Git 项目 Tree 为 64 位内容快照且 Vcs/Commit 写 none；Commit 只供追溯。
 - **裁决与授权**：有 BLOCKER、Verify FAIL 或未接受的 MAJOR 必须 `BLOCKED`。记录用户对具体风险的接受，不推定暂存、代码提交、证据提交或收尾授权。
-- **交接与收尾**：`loop-state.sh --repo . --task <id> gate --slug <slug>` 通过后才可按授权提交代码，再单独获授权固化证据。未初始化不自动放行。`check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>` 从 HEAD 核验配对证据和最终代码树，不依赖本地 Loop，提交消息仍逐条检查。
+- **交接与收尾**：`loop-state.sh --repo . --task <id> gate --slug <slug>` 通过后才可按授权提交代码，再单独获授权固化证据。未初始化不自动放行。`check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>` 从 HEAD 核验配对证据和最终代码树，不依赖本地 Loop，提交消息仍逐条检查。非 Git 项目 gate 改用内容快照，finish 不带 `--base`，不执行 commit、push 或 PR。
 
 ### 任务级 Arena
 

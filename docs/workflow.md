@@ -61,3 +61,4 @@ bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage
 - **已知阻断优先**：`BLOCKER`、Verify `FAIL` 或未接受的 `MAJOR` 必判 `BLOCKED`。风险接受须针对具体发现落盘，不授予 Git 权限。
 - **代码和证据分两次提交**：`loop-state.sh --repo . --task <id> gate --slug <slug>` 核对收敛状态和同任务、同周期/轮次、同树的 PASS/READY 后，Lead 按授权提交代码，再单独获授权提交证据。仅确认未启用 Loop 时使用 `--no-loop`，缺少本地状态不等于未启用。
 - **收尾只认证已提交的任务最终树**：`check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>` 从 HEAD 读取配对记录，比对 `TaskTip^{tree}`，不依赖本地 Loop。区间消息仍逐条检查，收尾通过不授权 push 或合并。
+- **非 Git 项目**：`loop-state.sh` / `arena-state.sh` 接受普通目录；verify/review 记录必须写 `Vcs: none`、`Commit: none`，`Tree` 为 64 位内容快照。gate 与 finish 用同一快照核对，不执行 commit、push 或 PR；该凭证不等同于已提交历史。

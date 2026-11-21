@@ -32,8 +32,9 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
 ## 执行步骤
 
 1. **记录证据对象**
-   - Lead 确认任务与范围，按暂存授权仅暂存代码。检查 `git status --porcelain` 与暂存 diff；记录应留在 `.ship/` 未暂存，其他路径有未暂存或非忽略的未跟踪文件时，不得签发 PASS。
-   - Lead 在验证前后采集 `git write-tree`；Critic/Verifier 只在交付的快照上运行命令，不运行 `git write-tree`，新增测试交回 Lead。
+   - Lead 确认任务与范围。Git 项目按暂存授权仅暂存代码，检查 `git status --porcelain` 与暂存 diff；记录应留在 `.ship/` 未暂存，其他路径有未暂存或非忽略的未跟踪文件时，不得签发 PASS。
+   - 非 Git 项目不执行 Git 命令；用 `check-evidence.sh --mode snapshot --repo .` 采集 64 位内容快照，记录同样留在 `.ship/verify/`。
+   - Git 项目 Lead 在验证前后采集 `git write-tree`；非 Git 项目采集内容快照。Critic/Verifier 只在交付的快照上运行命令，不自行采集快照，新增测试交回 Lead。
 2. **确定验证命令**
    - 按以下优先级选择命令（语言无关）：
      1. 用户在当前对话指定的命令；
@@ -49,7 +50,7 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
    - 若因环境限制（如缺少外部 DB/网络/凭据）导致部分检查无法运行，必须明确标注“未验证范围”。
    - 必需门禁未运行或未通过时，结论只能是 `PARTIAL` 或 `FAIL`；`PARTIAL` 不得被下游映射为 `PASS` 或 `READY`。
 5. **落盘验证记录**
-   - 按 `references/dev-baseline.md` 写入 `.ship/verify/<slug>.md`（包含 `Task/Cycle/Round`、命令证据表与未覆盖范围）；仅明确未启用 Loop 的任务可写 `Cycle: none`、`Round: none`。`FAIL` / `PARTIAL` 同样落盘，未通过不得交接。两份记录齐全后由 `check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对。
+   - 按 `references/dev-baseline.md` 写入 `.ship/verify/<slug>.md`（包含 `Task/Cycle/Round`、命令证据表与未覆盖范围）；仅明确未启用 Loop 的任务可写 `Cycle: none`、`Round: none`。Git 项目写 `Commit: pending`（`Vcs: git` 可省略）；非 Git 项目必须写 `Vcs: none`、`Commit: none`，`Tree` 使用 64 位内容快照。`FAIL` / `PARTIAL` 同样落盘，未通过不得交接。两份记录齐全后由 `check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对。
 
 ## 输出格式（对话输出 + 落盘记录）
 

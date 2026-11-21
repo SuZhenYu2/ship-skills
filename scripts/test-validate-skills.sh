@@ -122,5 +122,23 @@ auto="${T_ROUTE}/skills/ship-auto/SKILL.md"
 ruby -pi -e 'gsub(/L2\/L3 默认启用/, "Loop 可选")' "$auto"
 expect_fail "路由缺少Loop启用闭环被拦截" bash "${T_ROUTE}/scripts/validate-skills.sh"
 
+T_TASKID="${TMP_ROOT}/task-id"
+copy_repo "${T_TASKID}"
+auto="${T_TASKID}/skills/ship-auto/SKILL.md"
+ruby -EUTF-8 -pi -e 'gsub(/任务 ID 默认等于任务 slug/, "任务 ID 由用户提供")' "$auto"
+expect_fail "缺少任务ID默认规则被拦截" bash "${T_TASKID}/scripts/validate-skills.sh"
+
+T_NONGIT="${TMP_ROOT}/non-git"
+copy_repo "${T_NONGIT}"
+commit="${T_NONGIT}/skills/ship-commit/SKILL.md"
+ruby -EUTF-8 -pi -e 'gsub(/非 Git/, "Git 环境")' "$commit"
+expect_fail "缺少非Git交付契约被拦截" bash "${T_NONGIT}/scripts/validate-skills.sh"
+
+T_ARENA_NG="${TMP_ROOT}/arena-non-git"
+copy_repo "${T_ARENA_NG}"
+arena="${T_ARENA_NG}/skills/ship-arena/SKILL.md"
+ruby -EUTF-8 -pi -e 'gsub(/非 Git/, "Git 环境")' "$arena"
+expect_fail "Arena缺少非Git入口被拦截" bash "${T_ARENA_NG}/scripts/validate-skills.sh"
+
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

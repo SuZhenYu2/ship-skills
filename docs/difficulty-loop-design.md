@@ -53,9 +53,9 @@ L2 / L3 默认启用 Loop，L1 可选。`ship-auto` 输出 level/mode/budget 与
 
 由 Bash 入口调用 TypeScript（Node.js 原生运行，零第三方依赖）后端；`record pass` 与 `gate` 复用需要 Python 3.9+ 的证据检查脚本：
 
-- `--repo <root>` 必须指向 Git 工作区根目录；任务 `<id>` 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。
+- `--repo <root>` 必须指向项目根目录（Git 工作区根或非 Git 项目根）；任务 `<id>` 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。
 - 状态路径：`<root>/.ship/tasks/<id>/loop.json`；禁止路径上出现任何符号链接。
-- 写操作（`init` / `record` / `escalate` / `reset`）使用同目录临时文件与原子重命名，并沿用 `git rev-parse --git-path info/exclude` 维护 `/.ship/tasks/`，不修改业务 `.gitignore`（写入前须披露）。
+- 写操作（`init` / `record` / `escalate` / `reset`）使用同目录临时文件与原子重命名。Git 项目沿用 `git rev-parse --git-path info/exclude` 维护 `/.ship/tasks/`，不修改业务 `.gitignore`（写入前须披露）；非 Git 项目不写 `info/exclude`。
 - `status` 只读，不创建文件；缺文件报告 `UNINITIALIZED`；文件损坏、版本或字段非法、环境缺失均硬失败（退出码 `1`）并暂停，不静默重置。
 
 ### 4.1 状态文件 Schema（`.ship/tasks/<id>/loop.json`）

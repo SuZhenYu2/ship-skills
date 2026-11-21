@@ -227,47 +227,54 @@ function runGit(repo: string, args: string[]): string {
   }).trim();
 }
 
-function checkHandoff(repo: string, task: string, slug: string, context: string[]): string {
+function checkHandoff(repo: string, task: string, slug: string, context: string[]): { tree: string; vcs: 'git' | 'none' } {
   const output = execFileSync('bash', [
     path.join(import.meta.dirname, 'check-evidence.sh'),
     '--mode', 'handoff', '--repo', repo, '--slug', slug, '--task', task, ...context,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const match = /^PASS handoff slug=(\S+) tree=([0-9a-f]+)$/.exec(output);
+  const match = /^PASS handoff slug=(\S+) tree=([0-9a-f]+)(?: vcs=(git|none))?$/.exec(output);
   if (!match || match[1] !== slug || ![40, 64].includes(match[2].length)) {
     fail('check-evidence.sh 未返回可识别的 handoff 快照引用。');
   }
-  return match[2];
+  return { tree: match[2], vcs: (match[3] ?? 'git') as 'git' | 'none' };
 }
 
 function checkPassEvidence(repo: string, task: string, slug: string, cycle: string, round: number): Pick<HistoryEntry, 'evidence' | 'slug' | 'tree'> {
   return {
     evidence: `.ship/verify/${slug}.md; .ship/review/${slug}.md`,
     slug,
-    tree: checkHandoff(repo, task, slug, ['--cycle', cycle, '--round', String(round)]),
+    tree: checkHandoff(repo, task, slug, ['--cycle', cycle, '--round', String(round)]).tree,
   };
 }
 
-function checkCommitGate(repo: string, task: string, slug: string, state: LoopState | null, args: ParsedArgs): void {
+function checkCommitGate(repo: string, task: string, slug: string, state: LoopState | null, args: ParsedArgs, isGit: boolean): void {
+  const vcs = isGit ? 'git' : 'none';
   if (state === null) {
     if (!args.noLoop) fail('Loop: UNINITIALIZED；状态缺失不代表未启用。恢复任务状态，或确认未启用后传 --no-loop。');
-    const tree = checkHandoff(repo, task, slug, ['--no-loop', ...(args.allowLegacy ? ['--allow-legacy'] : [])]);
-    process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${tree} loop=none\n`);
+    const handoff = checkHandoff(repo, task, slug, ['--no-loop', ...(args.allowLegacy ? ['--allow-legacy'] : [])]);
+    if (handoff.vcs !== vcs) fail('证据的 VCS 与当前项目不一致。');
+    process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${handoff.tree} loop=none vcs=${vcs}\n`);
     return;
   }
   if (args.noLoop) fail('任务已启用 Loop，不能使用 --no-loop 或旧证据兼容。');
   if (state.status !== 'CONVERGED') {
     const next = state.status === 'ACTIVE' ? '先完成验证与审查并记录 pass。'
       : state.status === 'TRIPPED' ? '先 escalate，再经确认 reset 并重验。' : '经确认 reset 后重新验证与审查。';
-    fail(`Loop: ${state.status}；禁止提交代码。${next}`);
+    fail(`Loop: ${state.status}；禁止交付。${next}`);
   }
   const result = state.history.at(-1);
   if (result?.stage !== 'ship-review' || result.outcome !== 'pass' || result.round !== state.round || !result.tree) {
     fail('Loop 已标为 CONVERGED，但缺少有效收敛证据；重新验证与审查。');
   }
   if (result.slug !== slug) fail('提交 slug 与本轮收敛证据不一致。');
-  const tree = checkHandoff(repo, task, slug, ['--cycle', state.cycle, '--round', String(state.round)]);
-  if (result.tree !== tree) fail('暂存区 Tree 与收敛时的 Tree 不一致；重开周期后重新验证与审查。');
-  process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${tree} cycle=${state.cycle} round=${state.round}\n`);
+  const handoff = checkHandoff(repo, task, slug, ['--cycle', state.cycle, '--round', String(state.round)]);
+  if (handoff.vcs !== vcs) fail('证据的 VCS 与当前项目不一致。');
+  if (result.tree !== handoff.tree) {
+    fail(isGit
+      ? '暂存区 Tree 与收敛时的 Tree 不一致；重开周期后重新验证与审查。'
+      : '当前内容快照与收敛时不一致；重开周期后重新验证与审查。');
+  }
+  process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${handoff.tree} cycle=${state.cycle} round=${state.round} vcs=${vcs}\n`);
 }
 
 function checkFailureEvidence(repo: string, evidence: string): string {
@@ -289,7 +296,8 @@ function isSymlinkIfExists(targetPath: string): boolean {
   }
 }
 
-function ensureLocalExclude(repo: string): void {
+function ensureLocalExclude(repo: string, isGit: boolean): void {
+  if (!isGit) return;
   const excludeRaw = runGit(repo, ['rev-parse', '--git-path', 'info/exclude']);
   const excludePath = path.isAbsolute(excludeRaw) ? excludeRaw : path.join(repo, excludeRaw);
   const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'latin1') : '';
@@ -438,7 +446,7 @@ function validateState(raw: unknown, expectedTask: string): LoopState {
   return obj as unknown as LoopState;
 }
 
-function printBanner(stageLabel: string, taskId: string, state: LoopState | null): void {
+function printBanner(stageLabel: string, taskId: string, state: LoopState | null, vcs: 'git' | 'none'): void {
   if (state === null) {
     process.stdout.write(
       `[${stageLabel}] Loop: UNINITIALIZED | 范围: ${taskId} | 难度: - | 模式: - | 轮次: 0/0\n`,
@@ -450,6 +458,7 @@ function printBanner(stageLabel: string, taskId: string, state: LoopState | null
     `[${stageLabel}] Loop: ${state.status} | 范围: ${taskId} | 难度: ${state.level} | 模式: ${state.mode} | 轮次: ${state.round}/${state.max_rounds}\n`,
   );
   process.stdout.write(`cycle=${state.cycle}\n`);
+  if (vcs === 'none') process.stdout.write('vcs=none\n');
   process.stdout.write(`mode-contract: ${state.mode} | ${MODE_CONTRACTS[state.mode]}\n`);
 }
 
@@ -576,9 +585,18 @@ function main(): void {
 
   try {
     const repo = fs.realpathSync(args.repo);
-    const topLevel = fs.realpathSync(runGit(repo, ['rev-parse', '--show-toplevel']));
+    if (!fs.statSync(repo).isDirectory()) {
+      fail('--repo 必须指向目录。');
+    }
+    let isGit = true;
+    let topLevel = repo;
+    try {
+      topLevel = fs.realpathSync(runGit(repo, ['rev-parse', '--show-toplevel']));
+    } catch {
+      isGit = false;
+    }
     if (topLevel !== repo) {
-      fail('--repo 必须指向 Git 工作区根目录。');
+      fail('--repo 必须指向项目根目录（Git 工作区根或非 Git 项目根）。');
     }
 
     const shipDir = path.join(repo, '.ship');
@@ -601,12 +619,12 @@ function main(): void {
     const label = args.stage ?? 'ship';
 
     if (action === 'status') {
-      printBanner(label, task, state);
+      printBanner(label, task, state, isGit ? 'git' : 'none');
       process.exit(0);
     }
 
     if (action === 'gate') {
-      checkCommitGate(repo, task, args.slug as string, state, args);
+      checkCommitGate(repo, task, args.slug as string, state, args, isGit);
       process.exit(0);
     }
 
@@ -614,7 +632,7 @@ function main(): void {
       if (state !== null) {
         fail('任务 loop 状态已存在；如需重开新周期，请显式使用 reset。');
       }
-      ensureLocalExclude(repo);
+      ensureLocalExclude(repo, isGit);
       const nextState: LoopState = {
         version: 1,
         task,
@@ -629,7 +647,7 @@ function main(): void {
         history: [],
       };
       atomicWriteJson(statePath, nextState);
-      printBanner(label, task, nextState);
+      printBanner(label, task, nextState, isGit ? 'git' : 'none');
       process.exit(0);
     }
 
@@ -639,7 +657,7 @@ function main(): void {
 
     if (action === 'reset') {
       if (state.status === 'TRIPPED') fail('Loop: TRIPPED；必须先 escalate，再经确认 reset。');
-      ensureLocalExclude(repo);
+      ensureLocalExclude(repo, isGit);
       const nextState: LoopState = {
         version: 1,
         task,
@@ -654,7 +672,7 @@ function main(): void {
         history: [],
       };
       atomicWriteJson(statePath, nextState);
-      printBanner(label, task, nextState);
+      printBanner(label, task, nextState, isGit ? 'git' : 'none');
       process.exit(0);
     }
 
@@ -662,14 +680,14 @@ function main(): void {
       if (state.status !== 'TRIPPED' && state.status !== 'ACTIVE') {
         fail(`当前状态为 ${state.status}，不允许执行 escalate。`);
       }
-      ensureLocalExclude(repo);
+      ensureLocalExclude(repo, isGit);
       state.status = 'ESCALATED';
       state.escalation = {
         target: (args.target as string).trim(),
         reason: (args.reason as string).trim(),
       };
       atomicWriteJson(statePath, state);
-      printBanner(label, task, state);
+      printBanner(label, task, state, isGit ? 'git' : 'none');
       process.stdout.write(
         `已记录升级：target=${state.escalation.target} | reason=${state.escalation.reason}\n`,
       );
@@ -689,7 +707,7 @@ function main(): void {
         ? checkPassEvidence(repo, task, args.slug as string, state.cycle, state.round + 1)
         : { evidence: checkFailureEvidence(repo, args.evidence as string) };
       const errHash = outcome !== 'pass' ? normalizeErrorHash(args.errorSig) : '';
-      ensureLocalExclude(repo);
+      ensureLocalExclude(repo, isGit);
       state.round += 1;
       state.history.push({
         round: state.round,
@@ -731,7 +749,7 @@ function main(): void {
       }
 
       atomicWriteJson(statePath, state);
-      printBanner(label, task, state);
+      printBanner(label, task, state, isGit ? 'git' : 'none');
       if (tripMsg) {
         process.stdout.write(`[TRIPPED] ${tripMsg}\n`);
       }

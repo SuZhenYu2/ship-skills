@@ -4,7 +4,10 @@
 
 ## 1. 任务绑定与状态读取
 
-- 先确认目标 Git 工作区根 `<root>` 与任务 `<id>`（`[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符）；任务不明确时先确认，禁止从分支或“全局 active task”猜测。
+- 仓库根用 `git rev-parse --show-toplevel` 获取，必须指向工作区根目录。
+- 任务 `<id>` 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。已有 `.ship/tasks/*/loop.json` 或 `arena.json` 时列出候选让用户选择，禁止从分支或“全局 active task”猜测。
+- 新任务没有现成 ID 时，从任务标题提炼 kebab-case 候选 slug，检查 `.ship/tasks/` 无冲突后展示给用户确认；确认后**任务 ID 默认等于任务 slug**，Loop、Arena 与证据 `Task` 共用该值。
+- 用户明确不启用 Loop 时仍使用该 slug 作为 `Task`；提交走 `--no-loop`，记录写 `Cycle/Round: none`。飞书 `<req-id>` 不自动生成，缺失时按 `references/git-branch-policy.md` 阻断。
 - 只读查看当前循环状态（不创建文件）：
 
   ```bash
@@ -92,3 +95,12 @@ bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> record \
 - `ship-commit` 执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> gate --slug <slug>`。`ACTIVE`、`TRIPPED`、`ESCALATED` 均不允许提交新代码。`CONVERGED` 仍要以本轮最后一次 `pass` 重新核对暂存树及同任务、同周期、同轮的 PASS/READY；gate 不写本地状态，不暂存或提交。
 - `UNINITIALIZED` 默认阻断。仅用户确认该任务未启用 Loop，才能加 `--no-loop` 并复核 `Cycle: none`、`Round: none`；兼容旧记录时另加 `--allow-legacy`。有本地 Loop 状态，或记录绑定了真实周期时，不得通过兼容模式。
 - `ship-finish` 核验已提交的配对证据及最终代码树，不读取本地 Loop。证据未固化不能收尾；成功的 finish 只认证该已提交快照，不批准本地的新一轮实现。记录格式、两阶段授权与兼容规则见 `references/dev-baseline.md`。
+- 非 Git 项目：gate 仍校验 Loop 收敛与内容快照，但不创建 C/E、不 push；finish 省略 `--base`，用当前 64 位内容快照核对两份记录。
+
+## 6. 非 Git 项目
+
+- `loop-state.sh` / `arena-state.sh` 接受非 Git 项目根；不创建 `.git`，也不写 `info/exclude`。
+- 交付凭证：`check-evidence.sh --mode snapshot --repo .` 输出 64 位 SHA-256 内容快照，覆盖工作区常规文件与符号链接，排除 `.git/`、`.ship/tasks/`、`.ship/verify/`、`.ship/review/` 和 `.DS_Store`。
+- 证据记录必须写 `Vcs: none`、`Commit: none`，`Tree` 使用内容快照；handoff、gate 与 finish 都用同一快照核对。
+- 非 Git finish 不传 `--base`，用当前快照核对两份记录；不执行 commit / push / PR。该凭证只证明工作区内容与验证时一致，不具备已提交历史的不可变性。
+- Arena 候选的 `snapshot.head` 写 `none`，`worktree` 写 64 位内容指纹。
