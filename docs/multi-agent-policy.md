@@ -13,7 +13,7 @@
 
 ## 任务级 Arena 与协作分工的区别
 
-- Arena 的权威规则为各 Skill 附带的 `references/arena-policy.md`。先明确仓库和任务；ship-arena 的 on/off 直接执行动作，无需前置 status，须披露向 Git 本地 `info/exclude` 追加 `/.ship/` 的元数据写入（不改业务 `.gitignore`，禁止时先确认冲突）。其他阶段读取 `arena-state.sh ... status --stage <ship-stage>`；不猜全局 active task，失败暂停而不是降级 off。配置/计划策略与实际执行分别报告。
+- Arena 的权威规则为各 Skill 附带的 `references/arena-policy.md`。先明确仓库和任务；ship-arena 的 on/off 直接执行动作，无需前置 status，须披露向 Git 本地 `info/exclude` 追加 `/.ship/tasks/` 的元数据写入（不改业务 `.gitignore`，禁止时先确认冲突）。其他阶段读取 `arena-state.sh ... status --stage <ship-stage>`；不猜全局 active task，失败暂停而不是降级 off。配置/计划策略与实际执行分别报告。
 - `ship-arena` 仅管理任务 on/off/status；on 后按 selective 阶段策略使用两个独立候选。候选是在相同固定输入下竞争方案、根因或审查建议，不是分配两个 Builder 同时实现业务。
 - Arena 候选只读目标仓库，仅可写独占临时目录；实际业务实现默认单路。既有互斥模块并行实现仍须单独满足授权、契约冻结、白名单和资源隔离条件，不能由开关推导授权。
 - 有效产物、硬约束优先、裁决、能力降级与最终快照重验遵循共享协议。少于两个有效候选不能声称完成比选；无独立上下文时不模拟多个 Agent。
@@ -44,7 +44,7 @@
    - 同一个 `BLOCKER` 或失败测试最多允许「`Builder` 修复 → `Critic` 复验」**2 轮**。
    - 第 2 轮仍未收敛时，强制停止循环，退回 `Lead` 重新审视 `.ship/plans/<slug>.md` 或上报用户拍板。
    - 禁止子 Agent 之间互相辩论；出现意见分歧一律由 `Lead` 对照 `spec` 裁决，超出 `spec` 范围则交由用户决定。
-   - `Critic` 的 `READY` 以 `Verifier` 证据齐全为前提；必需门禁缺失或为 `PARTIAL` 时输出 `INCOMPLETE`，不得放行提交。
+   - `Critic` 对有效 `BLOCKER`、验证失败或未接受的 `MAJOR` 判 `BLOCKED`；无已知阻断但缺证或验证为 `PARTIAL` 时判 `INCOMPLETE`。只有同任务同树的验证 `PASS` 且审查证据齐全才能放行。
 
 ## 4. 强制委派契约模板（Task Contract）
 

@@ -21,7 +21,7 @@ bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage
 {"version": 1, "enabled": true, "policy": "selective", "candidates": 2}
 ```
 
-缺文件默认 off，status 不写文件；损坏、字段/版本非法、路径或运行环境错误均失败并报告，不静默改为 off。on/off 原子更新状态，并向 Git 本地 `info/exclude` 追加 `/.ship/`，不改业务 `.gitignore`。这是须提前披露的本地 Git 元数据写入，不能说完全不写 Git；禁止此写入时先确认冲突。开关不包含提交、暂存等 Git 操作授权。
+缺文件默认 off，status 不写文件；损坏、字段/版本非法、路径或运行环境错误均失败并报告，不静默改为 off。on/off 原子更新状态，并向 Git 本地 `info/exclude` 追加 `/.ship/tasks/`，不改业务 `.gitignore`。这是须提前披露的本地 Git 元数据写入，不能说完全不写 Git；禁止此写入时先确认冲突。开关不包含提交、暂存等 Git 操作授权。
 
 on/off 确认任务后直接执行，无需前置 status，不递归调用入口。所有其他阶段入口调用 status；安装后的共享路径相对 Skill 目录解析。
 
@@ -37,8 +37,8 @@ on/off 确认任务后直接执行，无需前置 status，不递归调用入口
 | ship-tdd | 测试设计与高风险策略比选，业务实现单路 |
 | ship-fix | 独立根因假设证伪与修复方案比选，Lead 单路修复 |
 | ship-verify | 同一最终快照独立验证，事实不投票 |
-| ship-review | 独立双视角审查，有效 BLOCKER 必须阻断 |
-| ship-commit | Lead 串行提交门禁，获授权后提交仅执行一次 |
+| ship-review | 独立双视角审查，有效 BLOCKER 或未接受的 MAJOR 必须阻断 |
+| ship-commit | Lead 串行执行；代码提交和证据提交分别取得授权，不重复提交代码 |
 | ship-finish | 独立复核交付证据，Git 收尾仅 Lead 串行执行 |
 | ship-arena | 配置开关，不派发候选 |
 

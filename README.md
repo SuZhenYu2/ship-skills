@@ -17,12 +17,14 @@
 | `ship-fix` | 故障修复 | 先复现与假设证伪定位 Root Cause，再修复并补齐回归测试 | 复杂故障输出 `.ship/fixes/<slug>.md` |
 | `ship-verify` | 验证门禁 | 声称完成前跑通真实构建、测试与静态检查命令，附原始输出证据 | 对话输出 + `.ship/verify/<slug>.md` |
 | `ship-review` | 风险审查 | 提交前对照 `spec` 和 `git diff` 审查数据、并发、异常、兼容性与越界改动 | 对话输出 + `.ship/review/<slug>.md` |
-| `ship-commit` | 提交规范 | 调用确定性脚本校验分支与提交消息，按 `<type>(<req-id>): <scope> <subject>` 生成提交信息 | 对话输出 + 证据记录 Commit 绑定 |
-| `ship-finish` | 分支收尾 | 逐条校验全部提交的飞书需求 ID、验证/审查记录与工作区状态，生成 PR/合并说明 | 仅对话输出 |
+| `ship-commit` | 提交规范 | 调用确定性脚本校验分支与提交消息，按 `<type>(<req-id>): <scope> <subject>` 生成提交信息 | 建议消息；分别获授权后提交代码与证据 |
+| `ship-finish` | 分支收尾 | 逐条校验提交消息，按任务最终代码树核验已提交的证据，生成 PR/合并说明 | 仅对话输出 |
+
+提交前以 `check-evidence.sh --mode handoff --repo . --slug <slug>` 核对同一代码树的 PASS/READY；存在未接受的 MAJOR 必须阻断。收尾以 `check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 核对 HEAD 中的任务记录，不按提交 SHA 逐条索证。风险接受、暂存、代码提交、证据提交与收尾授权互不替代。记录格式与两阶段提交流程见[证据契约](references/dev-baseline.md)。
 
 ## 快速开始
 
-依赖 Bash、Git 与支持原生运行 TypeScript 的 Node.js（推荐 Node 22.18+ / 24+）；Arena 与 Loop 状态后端均为零第三方依赖的 TypeScript，不依赖 Python。安装或升级使用下列命令，升级后重新加载 Skill；不要只复制 SKILL.md 而遗漏附带协议和脚本。
+依赖 Bash、Git 与支持原生运行 TypeScript 的 Node.js（推荐 Node 22.18+ / 24+）；提交和收尾证据门禁还需要 Python 3.9+，仓库结构自检需要 Ruby 的 YAML 标准库。安装或升级使用下列命令，升级后重新加载 Skill；不要只复制 SKILL.md 而遗漏附带协议和脚本。
 
 ```bash
 # 1. 自检仓库完整性
@@ -63,7 +65,7 @@ bash scripts/arena-state.sh --repo /path/to/project --task order-timeout status 
 bash scripts/arena-state.sh --repo /path/to/project --task order-timeout off
 ```
 
-on/off 会写 `.ship/tasks/<id>/arena.json`，并把 `/.ship/` 追加到 Git 本地 `info/exclude`，不修改业务 `.gitignore`。这是本地元数据写入，不是提交/暂存等 Git 操作授权；若禁止此写入，须先确认冲突。缺文件默认 off，损坏或依赖/命令失败会报错，不静默降级。
+on/off 会写 `.ship/tasks/<id>/arena.json`，并把 `/.ship/tasks/` 追加到 Git 本地 `info/exclude`，不修改业务 `.gitignore`。这是本地元数据写入，不是提交/暂存等 Git 操作授权；若禁止此写入，须先确认冲突。缺文件默认 off，损坏或依赖/命令失败会报错，不静默降级。
 
 回显如 `[ship-plan] Arena: ON | 范围: order-timeout | 计划策略: 双候选方案比选`，只代表配置和计划策略，不代表已实际执行。开启从下一阶段生效；关闭后停止新派发，运行请求尝试取消，否则忽略后续结果，不回滚已有产物。默认 selective、两个候选，不默认并行业务实现；Git 提交/收尾仅 Lead 在授权范围内串行执行。
 

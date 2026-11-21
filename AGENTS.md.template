@@ -19,15 +19,19 @@
   - **复杂 / 高风险 / 多模块改动**：先 `ship-plan` 冻结共享契约与文件白名单，落盘 `.ship/plans/<slug>.md`。
   - **Bug / 线上故障**：走 `ship-fix` 先复现与定位根因，再修复并补齐回归测试。
 - **证据优先**：在声称“已完成 / 已修复 / 可提交”之前，必须运行真实构建与测试命令并附原始结果。
-- **验证缺口不冒充通过**：必需门禁无法运行时标注 `PARTIAL` / `INCOMPLETE`，不得声称 `READY` 或已可提交。
+- **验证缺口不冒充通过**：无已知阻断但必需门禁无法运行时标注 `PARTIAL` / `INCOMPLETE`，不得声称 `READY` 或已可提交。
 - **禁止自动越权**：Skill 之间不自动串行触发；未获明确授权前，不执行 `git commit`、`rebase`、`merge`、`push` 或破坏性清理。
+
+- **任务证据**：specs/plans/fixes/verify/review 入库，仅 `.ship/tasks/` 保持本地。Verify/Review 按 `> Status:`、`> Date:`、`> Tree:`、`> Commit:`、`> Slug:`、`> Scope:` 记录；Tree 绑定代码快照，Commit 只供追溯。
+- **裁决与授权**：有 BLOCKER、Verify FAIL 或未接受的 MAJOR 必须 `BLOCKED`。记录用户对具体风险的接受，不推定暂存、代码提交、证据提交或收尾授权。
+- **交接与收尾**：`check-evidence.sh --mode handoff --repo . --slug <slug>` 通过后才可按授权提交代码，再单独获授权暂存并提交证据。`check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 从 HEAD 核验任务最终代码树，提交消息仍逐条检查。
 
 ### 任务级 Arena
 
 - 各 ship 阶段先读取所安装 Skill 的 `references/arena-policy.md`，明确仓库根与任务 ID；ship-arena 的 on/off 直接执行动作（无需前置 status），其他入口调用 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage <ship-stage>`。任务不明确先确认，不猜全局 active task。
 - `ship-arena` 管理该任务 on/off/status，状态在 `.ship/tasks/<id>/arena.json`；缺文件默认 off，损坏或读取失败必须报告并暂停，不能静默降级。每阶段统一回显配置、计划策略与实际执行的区别。
 - on/off 在阶段及新候选派发边界生效；关闭后不派发新候选，运行中请求尝试取消，否则忽略。selective 策略默认两个只读候选，不默认并行业务实现；最终整合快照仍须重验与独立审查。
-- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/`，不修改业务 `.gitignore`；先披露该本地元数据写入，若用户禁止则先确认冲突。开关不授予其他 Git 权限；提交、暂存、分支等 Git 写操作仅 Lead 获授权后串行执行。这是协作约定，不是提示词层面的强制安全隔离。
+- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/tasks/`，不修改业务 `.gitignore`；先披露该本地元数据写入，若用户禁止则先确认冲突。开关不授予其他 Git 权限；提交、暂存、分支等 Git 写操作仅 Lead 获授权后串行执行。这是协作约定，不是提示词层面的强制安全隔离。
 
 ## 3. Git 分支与飞书需求 ID 提交规范
 

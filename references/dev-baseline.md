@@ -5,7 +5,7 @@
 ## 0. 任务级 Arena 入口
 
 - 所有 ship 阶段先执行 `references/arena-policy.md`：确认仓库根和任务 ID（ship-arena 的 on/off 直接执行动作，无需前置 status），其他入口调用 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage <ship-stage>`；任务不明先询问，不猜全局 active task。
-- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/`，不修改业务 `.gitignore`；执行前披露该元数据写入，用户禁止时先确认冲突。
+- on/off 会向 Git 本地 `info/exclude` 追加 `/.ship/tasks/`，不修改业务 `.gitignore`；执行前披露该元数据写入，用户禁止时先确认冲突。
 - 统一保留脚本回显（如 `[ship-plan] Arena: ON | 范围: <id> | 计划策略: 双候选方案比选`），并将实际执行另行报告；状态读取失败必须暂停，不得静默当作 off。缺文件才默认 off。
 - on/off 在阶段及新候选派发边界生效；off 后停止新派发，对运行请求尝试取消，否则忽略结果。Arena 不默认并行业务实现，不改变原有门禁；所有 Git 写操作仅 Lead 获授权后串行执行。
 
@@ -53,19 +53,30 @@
 - `.ship/verify/<slug>.md`：验证证据记录（`ship-verify`）
 - `.ship/review/<slug>.md`：审查裁决记录（`ship-review`）
 
-`<slug>` 使用小写英文短横线命名（如 `order-timeout-cancel`）。简单任务不必强行生成文件，可在对话中直接交付。
+`<slug>` 使用小写英文短横线命名（如 `order-timeout-cancel`）。简单任务可省略 spec/plan；提交和收尾仍须有验证与审查记录。
 
 ### 验证/审查记录契约
 
 `ship-verify` 与 `ship-review` 除对话输出外，必须落盘可跨会话核验的记录：
 
-- `<slug>` 优先复用关联 spec/plan/fix 的 slug；无关联文档时取分支描述段或任务短名。
-- 文档头固定包含 `> Status:`、`> Date: <YYYY-MM-DD HH:mm>`、`> HEAD: <验证时 git rev-parse HEAD>`、`> index tree: <git write-tree>`。verify 的 Status 为 `PASS | FAIL | PARTIAL`，review 的 Status 为 `READY | BLOCKED | INCOMPLETE`。
-- 面向提交的验证/审查前，由 Lead 确认范围并按授权把本次改动全部暂存；存在未暂存修改或非忽略的未跟踪文件时，不得为 index 树签发 PASS/READY。快照一致性由 `check-git-policy.sh --mode handoff` 在提交前强制核验。
-- 正文：verify 放命令证据表与未覆盖范围；review 放裁决、分级发现摘要与对照的 spec/diff 范围。`FAIL` / `PARTIAL` / `BLOCKED` / `INCOMPLETE` 同样落盘。
-- 提交绑定：`ship-commit` 获授权执行 `git commit` 成功后，向对应记录追加 `> Commit: <新提交完整 SHA>`（`git rev-parse HEAD`）。
-- 收尾核验：`ship-finish` 对 `<base>..HEAD` 每条提交（`git log --pretty=%H`），必须找到含该完整 SHA 且 Status 为 `PASS` 的 verify 记录与 `READY` 的 review 记录，并校验 `HEAD^{tree}` 与记录 `index tree` 一致；缺失或不一致即 `BLOCKED`。
-- 记录遵循项目 `.ship/` 的 gitignore 策略；收尾完成前不得删除。
+同一任务沿用唯一 `<slug>`，文件名与记录头一致。两份记录各写一组引用行（尖括号为待填值）：
+
+```markdown
+> Status: <状态>
+> Date: <YYYY-MM-DD HH:mm>
+> Tree: <git write-tree 的完整树 ID>
+> Commit: <代码提交前为 pending，提交后为代码提交的完整 SHA>
+> Slug: <slug>
+> Scope: <本次验证或审查的实际范围>
+```
+
+- Verify 写 `PASS` / `FAIL` / `PARTIAL`、实际命令、退出码和未覆盖范围；Review 写 `READY` / `BLOCKED` / `INCOMPLETE`、分级发现和风险接受记录。失败或缺证也按相同格式落盘。
+- `BLOCKER`、验证失败或任何未经用户明确接受并记录的 `MAJOR` 均为 `BLOCKED`。无阻断但缺少同任务同树的必需证据为 `INCOMPLETE`；只有验证 `PASS`、审查证据齐全且无阻断才可 `READY`。
+- `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`、`.ship/verify/`、`.ship/review/` 入库；只有 `.ship/tasks/` 是本地运行状态。Lead 按授权仅暂存代码，记录保持未暂存；`.ship/` 外不得有未暂存或非忽略的未跟踪文件。
+- Handoff：`check-evidence.sh --mode handoff --repo . --slug <slug>` 从工作区读取该 slug 的 PASS 和 READY，两份 `Tree` 必须等于当前 `git write-tree`。脚本缺失或非零退出即停止。
+- Lead 获代码提交授权后才创建代码提交 C。核对两份 `Tree` 与 `C^{tree}` 相同，再更新原有 `Commit` 行；不以新树覆盖旧证据。另获证据暂存和提交授权后，将两份记录一起纳入仅修改 `.ship/` 的证据提交 E，不含 `.ship/tasks/`。E 的消息也须合规，但不需要为 E 自身再取证。
+- Finish：`check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 从 HEAD 已提交对象读取指定 slug 的记录，核对 PASS/READY、两份 `Tree` 等于 `TaskTip^{tree}`、区间内有同一证据提交包含两份记录，且 `.ship/` 外干净。`TaskTip` 是 `<base>..HEAD` 最后一个非证据提交（无则取 HEAD）；混入代码的提交不享受证据豁免。所有提交仍逐条校验消息，中间代码提交不逐条补证。
+- `Tree` 是权威绑定，`Commit` 只供追溯。只改提交消息且树不变无需重验；代码树改变必须重跑验证、审查并重新固化证据。风险接受、暂存、代码提交、证据提交及 push/merge 等收尾操作各有授权范围，互不推定。
 
 ### 产物状态枚举（唯一事实源）
 

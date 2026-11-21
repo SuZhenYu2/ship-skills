@@ -199,12 +199,22 @@ function main(): void {
     if (action === 'on' || action === 'off') {
       const excludeRaw = runGit(repo, ['rev-parse', '--git-path', 'info/exclude']);
       const excludePath = path.isAbsolute(excludeRaw) ? excludeRaw : path.join(repo, excludeRaw);
-      const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : '';
-      const lines = existing.split(/\r?\n/);
-      if (!lines.includes('/.ship/')) {
+      const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'latin1') : '';
+      const tasks = '/.ship/tasks/';
+      let hasTasks = existing.split(/\r?\n/).includes(tasks);
+      let updated = existing.split(/(?<=\n)/).map((line) => {
+        if (line.replace(/\r?\n$/, '') !== '/.ship/') return line;
+        if (hasTasks) return '';
+        hasTasks = true;
+        return line.replace('/.ship/', tasks);
+      }).join('');
+      if (!hasTasks) {
+        const eol = existing.includes('\r\n') ? '\r\n' : '\n';
+        updated += `${existing && !existing.endsWith('\n') ? eol : ''}${tasks}${eol}`;
+      }
+      if (updated !== existing) {
         fs.mkdirSync(path.dirname(excludePath), { recursive: true });
-        const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
-        fs.appendFileSync(excludePath, `${prefix}/.ship/\n`, 'utf8');
+        fs.writeFileSync(excludePath, updated, 'latin1');
       }
       state.enabled = action === 'on';
       state.generation = randomUUID().replace(/-/g, '');

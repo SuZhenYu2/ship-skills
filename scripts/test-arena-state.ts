@@ -41,6 +41,27 @@ describe('arena-state.ts', () => {
     assert.equal(fs.existsSync(path.join(repo, '.ship')), false);
   });
 
+  it('AC5 only excludes task state on a fresh write', () => {
+    runState(repo, ['--task', 'x', 'on']);
+    for (const [file, status] of [['.ship/specs/x.md', 1], ['.ship/tasks/x/arena.json', 0]] as const) {
+      assert.equal(spawnSync('git', ['-C', repo, 'check-ignore', '-q', file]).status, status, file);
+    }
+    assert.equal(fs.existsSync(path.join(repo, '.gitignore')), false);
+  });
+
+  it('AC5 migrates exact legacy rules only on write', () => {
+    const exclude = path.join(repo, '.git/info/exclude');
+    const before = '# /.ship/\r\n/.ship/\r\n/.ship/local/\r\n/.ship/\r\nnotes';
+    fs.writeFileSync(exclude, before);
+    runState(repo, ['--task', 'x', 'status']);
+    runState(repo, ['--task', 'x', 'check', '--generation', 'old'], false);
+    assert.equal(fs.readFileSync(exclude, 'utf8'), before);
+    for (const action of ['off', 'on']) {
+      runState(repo, ['--task', 'x', action]);
+      assert.equal(fs.readFileSync(exclude, 'utf8'), '# /.ship/\r\n/.ship/tasks/\r\n/.ship/local/\r\nnotes');
+    }
+  });
+
   it('on/off roundtrip and task isolation', () => {
     assert.match(runState(repo, ['--task', 'order-cancel', 'on']), /ON/);
     const statePath = path.join(repo, '.ship', 'tasks', 'order-cancel', 'arena.json');

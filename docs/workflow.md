@@ -30,7 +30,7 @@
 
 ## 任务级 Arena（可选）
 
-Arena 不是插在 plan 前的一次性步骤。用 `ship-arena` 为明确的仓库与任务执行 on/off/status；on/off 无需前置 status，会写状态并向 Git 本地 `info/exclude` 追加 `/.ship/`，不改业务 `.gitignore`，需先披露，若禁止本地元数据写入则先确认冲突。其他阶段入口按所安装 Skill 的 `references/arena-policy.md` 读取状态并保留脚本统一回显（如 `[ship-plan] Arena: ON | 范围: <id> | 计划策略: 双候选方案比选`）：
+Arena 不是插在 plan 前的一次性步骤。用 `ship-arena` 为明确的仓库与任务执行 on/off/status；on/off 无需前置 status，会写状态并向 Git 本地 `info/exclude` 追加 `/.ship/tasks/`，不改业务 `.gitignore`，需先披露，若禁止本地元数据写入则先确认冲突。其他阶段入口按所安装 Skill 的 `references/arena-policy.md` 读取状态并保留脚本统一回显（如 `[ship-plan] Arena: ON | 范围: <id> | 计划策略: 双候选方案比选`）：
 
 ```bash
 bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-plan
@@ -50,12 +50,14 @@ bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage
 | `.ship/specs/<slug>.md` | `ship-spec` | `ship-plan` / `ship-tdd` / `ship-review` / `Critic` | 目标、非目标、边界条件、异常规则、验收标准 |
 | `.ship/plans/<slug>.md` | `ship-plan` | `ship-tdd` / `Builder` / `Critic` | 冻结契约、模块拆解、文件白名单、回滚方案、测试矩阵 |
 | `.ship/fixes/<slug>.md` | `ship-fix` | `ship-verify` / `ship-review` / `Lead` | 复现方式、假设证伪记录、Root Cause、修复方案与回归用例 |
-| `.ship/verify/<slug>.md` | `ship-verify` | `ship-commit` / `ship-finish` / `Lead` | 命令证据、未覆盖范围、PASS/FAIL/PARTIAL 裁决与提交 SHA 绑定 |
-| `.ship/review/<slug>.md` | `ship-review` | `ship-commit` / `ship-finish` / `Lead` | 分级发现、READY/BLOCKED/INCOMPLETE 裁决与提交 SHA 绑定 |
+| `.ship/verify/<slug>.md` | `ship-verify` | `ship-commit` / `ship-finish` / `Lead` | 命令证据、未覆盖范围、PASS/FAIL/PARTIAL 裁决与代码树绑定 |
+| `.ship/review/<slug>.md` | `ship-review` | `ship-commit` / `ship-finish` / `Lead` | 分级发现、READY/BLOCKED/INCOMPLETE 裁决与代码树绑定 |
 
 ## 3. 控制权与门禁原则
 
 - **Skill 不互相自动调用**：`ship-auto` 只推荐下一步，所有阶段推进都可控、可复核。
 - **验证与审查不合并省略**：`ship-verify` 关注“代码能否跑通测试与检查”，`ship-review` 关注“设计、数据、并发与范围有没有线上隐患”。两者的结论必须落盘为 `.ship/verify/` 与 `.ship/review/` 记录，`ship-finish` 仅凭记录核验，不依赖对话记忆。
-- **验证缺口不冒充 READY**：`ship-verify` 为 `PARTIAL` 或必需门禁未运行时，`ship-review` 必须输出 `INCOMPLETE`，不得进入 `ship-commit`。
-- **Git 提交始终受控**：`ship-commit` 只负责合规校验与生成消息，实际 `git commit` / `push` / 合并动作必须由用户授权。
+- **验证缺口不冒充 READY**：无已知阻断，但 `ship-verify` 为 `PARTIAL` 或必需门禁未运行时，`ship-review` 必须输出 `INCOMPLETE`，不得进入 `ship-commit`。
+- **已知阻断优先**：`BLOCKER`、Verify `FAIL` 或未接受的 `MAJOR` 必判 `BLOCKED`。风险接受须针对具体发现落盘，不授予 Git 权限。
+- **代码和证据分两次提交**：`check-evidence.sh --mode handoff --repo . --slug <slug>` 核对暂存代码树与同 slug 的 PASS/READY 后，Lead 按授权提交代码，再单独获授权暂存并提交 `.ship/` 证据。
+- **收尾只认证已提交的任务最终树**：`check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 从 HEAD 读取记录，比对 `TaskTip^{tree}`；区间消息仍逐条检查。收尾通过不授权 push 或合并。

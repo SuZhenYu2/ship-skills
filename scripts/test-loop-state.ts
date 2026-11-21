@@ -43,6 +43,25 @@ describe('loop-state.ts', () => {
     assert.equal(fs.existsSync(path.join(repo, '.ship')), false);
   });
 
+  it('AC5 keeps the existing tasks rule and user entries when migrating on write', () => {
+    const exclude = path.join(repo, '.git/info/exclude');
+    const userRules = '# /.ship/\r\n/.ship/tasks/\r\n/.ship/private/';
+    fs.writeFileSync(exclude, `/.ship/\r\n${userRules}`);
+    runLoop(repo, ['--task', 'x', 'status']);
+    assert.equal(fs.readFileSync(exclude, 'utf8'), `/.ship/\r\n${userRules}`);
+    runLoop(repo, ['--task', 'x', 'init', '--level', 'L1', '--mode', 'single']);
+    assert.equal(fs.readFileSync(exclude, 'utf8'), userRules);
+    assert.equal(spawnSync('git', ['-C', repo, 'check-ignore', '-q', '.ship/specs/x.md']).status, 1);
+    assert.equal(spawnSync('git', ['-C', repo, 'check-ignore', '-q', '.ship/tasks/x/loop.json']).status, 0);
+  });
+
+  it('AC5 appends only tasks after an unterminated user entry', () => {
+    const exclude = path.join(repo, '.git/info/exclude');
+    fs.writeFileSync(exclude, 'mine');
+    runLoop(repo, ['--task', 'x', 'init', '--level', 'L1', '--mode', 'single']);
+    assert.equal(fs.readFileSync(exclude, 'utf8'), 'mine\n/.ship/tasks/\n');
+  });
+
   it('init status and task isolation keep git working tree clean', () => {
     const out = runLoop(repo, ['--task', 'order-cancel', 'init', '--level', 'L2', '--mode', 'builder-critic']);
     assert.match(out, /ACTIVE/);

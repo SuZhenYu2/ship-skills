@@ -97,5 +97,14 @@ copy_repo "${T_NO_EXEC}"
 chmod -x "${T_NO_EXEC}/scripts/arena-state.sh"
 expect_fail "脚本缺少可执行权限被拦截" bash "${T_NO_EXEC}/scripts/validate-skills.sh"
 
+T_CONTRACT="${TMP_ROOT}/contract"
+copy_repo "${T_CONTRACT}"
+review="${T_CONTRACT}/skills/ship-review/SKILL.md"
+ruby -pi -e 'gsub("check-evidence.sh", "旧门禁")' "$review"
+expect_fail "阶段遗漏证据门禁被拦截" bash "${T_CONTRACT}/scripts/validate-skills.sh"
+cp "${REPO_ROOT}/skills/ship-review/SKILL.md" "$review"
+printf '\n将整个 `.ship/` 加入 .gitignore。\n' >> "$review"
+expect_fail "整目录忽略的旧规则被拦截" bash "${T_CONTRACT}/scripts/validate-skills.sh"
+
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

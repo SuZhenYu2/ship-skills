@@ -10,7 +10,7 @@ description: 管理指定仓库、指定任务的 Arena on/off/status 开关，�
 ## 入口与操作
 
 1. 读取 `references/dev-baseline.md` 与 `references/arena-policy.md`。确认目标 Git 工作区根 `<root>`、任务 `<id>` 与操作 `on|off|status`；任务 ID 不超过 100 字符，仅含小写字母/数字及分隔短横线。输入不明确先确认，不猜全局 active task。未要求切换时仅查询 status。
-2. on/off 前先确认任务并披露：脚本除写 `.ship/tasks/<id>/arena.json`，还会将 `/.ship/` 追加至 Git 本地 `info/exclude`，不改业务 `.gitignore`。若用户禁止本地 Git 元数据写入，先说明冲突并确认。无需前置 status，也不递归调用自身；由 Lead 仅执行用户选择的一条：
+2. on/off 前先确认任务并披露：脚本除写 `.ship/tasks/<id>/arena.json`，还会将 `/.ship/tasks/` 追加至 Git 本地 `info/exclude`，不改业务 `.gitignore`。若用户禁止本地 Git 元数据写入，先说明冲突并确认。无需前置 status，也不递归调用自身；由 Lead 仅执行用户选择的一条：
 
    ```bash
    bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> on --stage ship-arena

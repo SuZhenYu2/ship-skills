@@ -12,7 +12,7 @@
   ```
 
 - `<ship-stage>` 为当前 Skill 名（如 `ship-plan`）。脚本由安装包提供，路径相对 Skill，`--repo` 指向业务仓库。
-- `ship-arena` 的 on/off 在确认任务后直接执行对应动作，无需前置 status，不递归调用自身。on/off 除写状态外，还会将 `/.ship/` 追加到 Git 本地 `info/exclude`（通过 `git rev-parse --git-path info/exclude` 定位），不修改业务 `.gitignore`。这是本地 Git 元数据写入，执行前须披露；若用户禁止任何 Git 元数据写入，先说明冲突并确认，不擅自执行。它不等于授权提交、暂存或其他 Git 操作。
+- `ship-arena` 的 on/off 在确认任务后直接执行对应动作，无需前置 status，不递归调用自身。on/off 除写状态外，还会将 `/.ship/tasks/` 追加到 Git 本地 `info/exclude`（通过 `git rev-parse --git-path info/exclude` 定位），不修改业务 `.gitignore`。这是本地 Git 元数据写入，执行前须披露；若用户禁止任何 Git 元数据写入，先说明冲突并确认，不擅自执行。它不等于授权提交、暂存或其他 Git 操作。
 - 状态仅存于目标仓库 `.ship/tasks/<id>/arena.json`，协议为 `version=1`、`enabled` 布尔值、`policy=selective`、`candidates=2`。缺文件默认 off；读取 status 不应创建状态文件。损坏、版本/字段不合法、脚本缺失或 Node.js 不可用均须报告并暂停，不得静默当成 off。
 - 每次显式 on/off 都生成新的 `generation`（32 位十六进制标识），status 只读并显示该标识。旧版配置缺少 generation 时显示“未绑定批次”，必须显式 on 后才能派发候选，不静默升级或恢复旧产物。
 - status 表达配置与**计划采用的策略**，不表示候选已派发、已完成或已通过评审。执行事实单独报告。
@@ -27,8 +27,8 @@
 | `ship-tdd` | 单路业务实现；两路独立测试设计/边界检查建议 | 不默认生成或合并两套业务实现 |
 | `ship-fix` | 两路独立根因假设与证伪建议，再由 Lead 单路修复 | 实际复现、根因证据与回归测试不能省略 |
 | `ship-verify` | 同一最终快照两路独立验证，由 Lead 协调真实命令，资源冲突时串行，事实不投票 | 建议或候选自报不能替代真实命令证据 |
-| `ship-review` | 两路独立干净上下文风险审查，Lead 对证据裁决，有效 BLOCKER 必须阻断 | 必需验证不全仍为 INCOMPLETE |
-| `ship-commit` | Lead 串行提交门禁，不派发竞争候选，获授权后 Git 提交仅执行一次 | Git 授权与最终快照门禁不变 |
+| `ship-review` | 两路独立干净上下文风险审查，Lead 对证据裁决，有效 BLOCKER 或未接受的 MAJOR 必须阻断 | 无阻断但必需验证不全为 INCOMPLETE |
+| `ship-commit` | Lead 串行提交门禁，不派发竞争候选，代码提交和证据提交分别获授权，不重复提交代码 | Git 授权与最终快照门禁不变 |
 | `ship-finish` | 独立复核交付证据；Git 收尾仅 Lead 串行执行 | 不以独立复核授权子 Agent 操作 Git |
 | `ship-arena` | 仅管理 on/off/status，不派发候选 | 不把开关成功当成阶段执行成功 |
 

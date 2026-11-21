@@ -12,7 +12,7 @@
   ```
 
 - 缺文件时输出 `UNINITIALIZED`；状态文件损坏、字段/版本非法、符号链接越界或 Node.js 不可用均硬失败（退出码 `1`）并暂停，不得静默重置。
-- 所有写操作（`init` / `record` / `escalate` / `reset`）会原子更新 `<root>/.ship/tasks/<id>/loop.json`，并将 `/.ship/` 追加至 Git 本地 `info/exclude`（不改业务 `.gitignore`）。执行写操作前须披露该本地元数据写入；它不包含任何提交、暂存或分支修改授权。
+- 所有写操作（`init` / `record` / `escalate` / `reset`）会原子更新 `<root>/.ship/tasks/<id>/loop.json`，并将 `/.ship/tasks/` 追加至 Git 本地 `info/exclude`（不改业务 `.gitignore`）。执行写操作前须披露该本地元数据写入；它不包含任何提交、暂存或分支修改授权。
 
 ## 2. L1 / L2 / L3 难度定级与工具路由
 

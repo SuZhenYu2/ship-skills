@@ -9,7 +9,7 @@
 
 核心边界：
 
-- **不替代原有门禁**：验证（`ship-verify`）、审查（`ship-review`）、快照一致性（`check-git-policy.sh --mode handoff`）与 Git 写操作授权红线保持不变。
+- **不替代原有门禁**：验证（`ship-verify`）、审查（`ship-review`）、快照一致性（`check-evidence.sh --mode handoff --repo . --slug <slug>`）与 Git 写操作授权红线保持不变。
 - **不打破控制权**：`ship-auto` 仍坚持“只评估、只推荐，不代执行”；是否切换模式、是否开启 `ship-arena` 均由用户确认。
 - **任务严格隔离**：状态按仓库与任务 `<id>` 隔离存放，任务不明确先确认，禁止猜测全局 active task。
 - **确定性熔断**：轮次计数、同错停滞检测与熔断状态由 `scripts/loop-state.sh` 硬校验，不依赖模型在长上下文中口头数轮次。
@@ -48,7 +48,7 @@
 
 - `--repo <root>` 必须指向 Git 工作区根目录；任务 `<id>` 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。
 - 状态路径：`<root>/.ship/tasks/<id>/loop.json`；禁止路径上出现任何符号链接。
-- 写操作（`init` / `record` / `escalate` / `reset`）使用临时文件 + `os.replace` 原子落盘，并沿用 `git rev-parse --git-path info/exclude` 追加 `/.ship/`，不修改业务 `.gitignore`（写操作前同样须披露本地元数据写入）。
+- 写操作（`init` / `record` / `escalate` / `reset`）使用临时文件 + `os.replace` 原子落盘，并沿用 `git rev-parse --git-path info/exclude` 追加 `/.ship/tasks/`，不修改业务 `.gitignore`（写操作前同样须披露本地元数据写入）。
 - `status` 只读，不创建文件；缺文件报告 `UNINITIALIZED`；文件损坏、版本或字段非法、环境缺失均硬失败（退出码 `1`）并暂停，不静默重置。
 
 ### 4.1 状态文件 Schema（`.ship/tasks/<id>/loop.json`）

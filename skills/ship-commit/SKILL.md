@@ -15,8 +15,7 @@ description: "校验当前分支与暂存区改动，优先调用确定性脚本
 
 - 严格遵循 `references/git-branch-policy.md` 与 `references/dev-baseline.md`。
 - **生成消息 ≠ 通过 Review ≠ 授权提交**；仅当用户明确授权且**零阻塞警告**时才执行 `git commit`。
-- **提交快照必须与已验证快照一致**：待提交的 index 树必须等于 `ship-verify` 证据对象中的 `index tree`，且 `HEAD` 与证据一致；否则视为未验证改动，禁止提交。
-- **禁止部分暂存直接提交**：存在未暂存改动（`git diff` 非空）时先冻结暂存范围；不得把未经当前快照验证的内容提交出去，也不得擅自 `git add` / `git stash`。
+- **只暂存代码**：不得混入 `.ship/` 记录；`.ship/` 外有未暂存修改或非忽略的未跟踪文件时停止，不擅自 `git add` 或 `git stash`。
 - **Multi-Agent 红线**：本 Skill 仅限主 Agent（`Lead`）执行，子 Agent 严禁调用。
 
 ## 反偷懒红线（Red Flags）
@@ -29,26 +28,21 @@ description: "校验当前分支与暂存区改动，优先调用确定性脚本
 1. **确定性分支校验与工作区检查**
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode branch`（若脚本不在当前仓库路径，则直接执行等价只读 `git branch --show-current` 并对照 `references/git-branch-policy.md` 正则校验）。
    - 查看 `git status --short` 与 `git diff --cached`；若暂存区为空，提示先确认暂存范围，并指出混入的无关文件或调试残留。
-   - 未暂存修改和非忽略的未跟踪文件都须交回 Lead 确认范围；不得擅自 `git add` 或 `git stash`。以下 handoff 门禁负责核对工作区和待提交快照。
-2. **核对验证与审查证据对象**
-   - 分别读取当前任务的真实 Verify `PASS` 与 Review `READY` 记录，各自必须包含当时的 `HEAD` 与 `index tree`。不得用当前值补齐旧记录，也不得以新 PASS 代替复审。
-   - 提交前由 Lead 运行 `bash <skill-dir>/scripts/check-git-policy.sh --repo . --mode handoff --verify-head <PASS-head> --verify-tree <PASS-tree> --review-head <READY-head> --review-tree <READY-tree>`。必须通过；缺记录、快照不匹配、非忽略的未跟踪文件或未暂存修改均阻断。
+2. **核对任务与待提交树**
+   - 运行 `bash <skill-dir>/scripts/check-evidence.sh --mode handoff --repo . --slug <slug>`，用同 slug 的 PASS/READY 核对当前代码树。脚本缺失、非零退出、记录缺失或树不一致均阻断；不传手抄的 SHA 替代记录。
    - 若 Critic 新增或修改了测试，接收其文件清单；由 Lead 确认纳入范围并按授权暂存，再针对最终快照重新验证与复审。不得自行忽略新增测试或借用旧结论。
 3. **提取并核对飞书需求 ID（`<req-id>`）**
    - 优先从合规分支末尾提取 `<req-id>`；若对话中显式提供新 ID 且与分支不一致，必须先向用户确认。
 4. **生成并校验 Commit Message**
    - 格式：`<type>(<req-id>): <scope> <subject>`。
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --mode commit-msg --message "<msg>"` 验证正则通过。
-5. **按授权决定是否提交**
-   - 存在任何阻塞项（基线分支、缺 `<req-id>`、暂存区为空、存在未暂存改动、index 与验证证据不一致、缺少 PASS/READY 证据）或未获提交授权时：只输出校验结果、建议 message 与解锁确认项，**不执行 `git commit`**。
-6. **绑定提交与证据记录**
-   - 获授权且 `git commit` 成功后，向本次改动对应的 `.ship/verify/<slug>.md` 与 `.ship/review/<slug>.md` 追加 `> Commit: <新提交完整 SHA>`（`git rev-parse HEAD`，记录契约见 `references/dev-baseline.md`）。快照一致性由步骤 2 的 handoff 门禁保证，不在绑定后补填旧记录。
-   - 若对应记录缺失，提醒先补跑；无记录的提交在 `ship-finish` 会判 `BLOCKED`。
+5. **创建代码提交 C**
+   - 门禁通过且有明确代码提交授权才执行；否则仅报告门禁结果、建议消息与缺项。风险接受不是暂存或提交授权。
+6. **单独固化证据 E**
+   - 核对两份记录的 `Tree` 均等于 `C^{tree}` 后，将各自的 `> Commit:` 更新为 C 的完整 SHA。若树不符，停止并对实际代码快照重验、复审，不回填树值或重复提交代码。
+   - 明确取得证据暂存与证据提交授权，才将本任务的两份记录一起固化；核对暂存路径均在 `.ship/` 内且不含 `.ship/tasks/`。E 的消息同样走步骤 4，例如 `chore(<req-id>): ship 记录 <slug> 验证与审查证据`。E 不需要为自己再生成证据。
 
-## 输出格式（对话输出；授权提交后向证据记录追加 Commit 绑定）
+## 输出格式
 
-- **分支与需求 ID 校验**：当前分支状态、`<req-id>` 来源
-- **证据对象一致性**：待提交 `HEAD` / `index tree` 与 `ship-verify` 记录的比对结果，以及 `git diff` 是否存在未暂存改动
-- **建议 Commit Message**：单行代码块
-- **提醒项**（如有）：未跑 `ship-review`、暂存区为空、混入无关文件或调试代码时显式提示
-- **证据绑定**（授权提交成功后）：已向哪些 verify/review 记录追加 `> Commit: <SHA>`
+- 报告分支、需求 ID、任务 slug、handoff 结果与建议消息。
+- 分别报告 C、E 是否已获授权和实际创建；若只有 C，说明证据尚未固化，不宣称可收尾。

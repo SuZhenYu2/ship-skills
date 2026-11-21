@@ -61,8 +61,5 @@ bash scripts/install.sh --target all --upgrade
 2. 打开 `AGENTS.md`，填写该项目的构建、测试与静态检查命令。
 3. 如需定制团队 Git 规范（例如补充默认合入基线、飞书需求 ID 获取路径），编辑 `references/git-branch-policy.md` 后重新运行 `install.sh --upgrade`。
 4. 如需沉淀某门语言的专项红线，可复制 `references/stacks/_template.md` 为 `references/stacks/<lang>.md` 并在项目 `AGENTS.md` 中引用。
-5. 建议在业务项目 `.gitignore` 中加入：
-   ```gitignore
-   .ship/
-   ```
-   如果团队希望把 `.ship/specs/`、`.ship/plans/` 或 verify/review 证据记录纳入版本库归档（跨机器收尾审计需要），可仅忽略临时文件。
+5. 将 `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`、`.ship/verify/`、`.ship/review/` 纳入版本控制，仅本地排除 `/.ship/tasks/`。迁移旧项目时，用 `git check-ignore -v --no-index .ship/verify/probe.md` 定位旧规则；经授权移除 `.gitignore` 或本地 `info/exclude` 中整目录排除项，确认记录不再被忽略、任务状态仍被忽略。
+6. 活跃任务重跑 verify/review，按[记录契约](../references/dev-baseline.md)生成六字段记录；旧记录不能靠补写树值放行。确认所安装版本提供 `check-evidence.sh` 且 Arena/Loop 写入只排除任务状态；若仍使用旧脚本，暂停相关操作，升级后再继续。

@@ -39,7 +39,7 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
      - **L1（低难度）**：推荐 `single`（单路直出 + 轻量验证 Loop，`max_rounds=2`），`ship-arena` 默认 `OFF`。
      - **L2（中难度）**：推荐 `builder-critic`（轻量 SDD + 写审分离，DSH 排障可配 `ralph`，`max_rounds=2`），`ship-arena` 按需可选。
      - **L3（高难度）**：推荐 `multi-agent`（`ship-grill` → `ship-plan` 契约冻结 + 互斥白名单并行 + 独立验收，`max_rounds=2`），建议用户显式评估是否开启 `ship-arena`。
-   - 若 `loop-state.sh status` 显示 `UNINITIALIZED`，给出可直接复制的 `loop-state.sh init` 建议命令（提醒写操作会追加 `/.ship/` 到本地 `info/exclude`）；若显示 `TRIPPED`，优先阻止继续重试并提示执行 `escalate` 或回退 `ship-plan`。
+   - 若 `loop-state.sh status` 显示 `UNINITIALIZED`，给出可直接复制的 `loop-state.sh init` 建议命令（提醒写操作会追加 `/.ship/tasks/` 到本地 `info/exclude`）；若显示 `TRIPPED`，优先阻止继续重试并提示执行 `escalate` 或回退 `ship-plan`。
 4. **判断当前阶段并给出唯一推荐**
    - 若 Loop 状态为 `TRIPPED` → 优先推荐执行 `loop-state.sh escalate` 并回退 `ship-plan` 或交由用户拍板，不推荐盲目重试。
    - 需求存在关键缺口、隐藏假设或涉及不可逆权衡/术语对齐（常见于 L3）→ 推荐 **`ship-grill`**（只需快速写 spec 则推荐 `ship-spec`）。
@@ -48,8 +48,9 @@ description: 检查当前仓库状态、Git 分支合规性与 .ship/ 文档，�
    - 方案已明确、待编写代码与测试 → 推荐 `ship-tdd`（L3 提示按 `docs/multi-agent-policy.md` 拆分）。
    - 已有代码改动但尚未跑验证 → 推荐 `ship-verify`。
    - 验证已通过、准备提交前 → 推荐 `ship-review`。
+   - 当前任务、当前树存在 `BLOCKER`、Verify `FAIL` 或未接受的 `MAJOR` → 先处理阻断，不推荐提交。
    - 审查为 `INCOMPLETE`（必需验证门禁未运行或为 `PARTIAL`）→ 补验证后复审，不推荐 `ship-commit`。
-   - 审查已 `READY`、准备生成提交信息 → 推荐 `ship-commit`。
+   - 同任务同树验证 `PASS` 且审查 `READY`、准备生成提交信息 → 推荐 `ship-commit`。
    - 已完成全部提交、准备提 PR / 收尾 → 推荐 `ship-finish`。
 
 ## 输出格式（仅对话输出，不生成文件）

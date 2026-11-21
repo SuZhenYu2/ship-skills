@@ -49,6 +49,8 @@ required_files=(
   "evals/calibration-cases.md"
   "scripts/install.sh"
   "scripts/check-git-policy.sh"
+  "scripts/check-evidence.sh"
+  "scripts/test-evidence.sh"
   "scripts/test-git-policy.sh"
   "scripts/arena-state.sh"
   "scripts/arena-state.ts"
@@ -98,6 +100,21 @@ for skill_dir in "${REPO_ROOT}"/skills/ship-*; do
     ERRORS=$((ERRORS + 1))
   fi
 
+  case "${dir_name}" in
+    ship-verify|ship-review|ship-commit|ship-finish)
+      mode=handoff
+      [[ "${dir_name}" != ship-finish ]] || mode=finish
+      if ! grep -Eq 'check-evidence[.]sh --mode '"${mode}"' [^`]*--slug <slug>' "${skill_file}"; then
+        echo "[ERROR] ${dir_name} 缺少按 slug 执行的 ${mode} 证据门禁" >&2
+        ERRORS=$((ERRORS + 1))
+      fi
+      ;;
+  esac
+  if grep -Eq '(忽略|排除)(整个|全部|整棵)?[[:space:]]*`?/?[.]ship/`?([[:space:]，。；]|$)|`/?[.]ship/`.{0,12}(整体忽略|整体排除|加入.{0,5}(exclude|[.]gitignore))' "${skill_file}"; then
+    echo "[ERROR] ${dir_name} 含已废弃的整目录忽略规则，仅 .ship/tasks/ 保持本地" >&2
+    ERRORS=$((ERRORS + 1))
+  fi
+
   while IFS= read -r ref_path; do
     [[ -z "${ref_path}" ]] && continue
     # 目标项目产物路径示例（如 docs/adr/*）不属于本仓库内部文件
@@ -126,7 +143,7 @@ fi
 for installed_skill in "${TMP_INSTALL}"/ship-*; do
   [[ -d "${installed_skill}" ]] || continue
   installed_name="$(basename "${installed_skill}")"
-  for required in references/dev-baseline.md references/arena-policy.md references/loop-policy.md docs/multi-agent-policy.md scripts/check-git-policy.sh scripts/arena-state.sh scripts/arena-state.ts scripts/loop-state.sh scripts/loop-state.ts; do
+  for required in references/dev-baseline.md references/arena-policy.md references/loop-policy.md docs/multi-agent-policy.md scripts/check-git-policy.sh scripts/check-evidence.sh scripts/arena-state.sh scripts/arena-state.ts scripts/loop-state.sh scripts/loop-state.ts; do
     if [[ ! -f "${installed_skill}/${required}" ]]; then
       echo "[ERROR] 安装后 ${installed_name} 缺少 ${required}" >&2
       ERRORS=$((ERRORS + 1))
