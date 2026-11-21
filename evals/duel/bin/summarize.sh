@@ -19,92 +19,84 @@ done
 [[ -n "${RUN_ROOT}" && -d "${RUN_ROOT}/sealed" ]] || die '请指定 --run-root'
 
 RUN_ROOT="$(cd "${RUN_ROOT}" && pwd)"
-LOCK_FILE="${RUN_ROOT}/sealed/scores.lock"
+python3 -B - "${DUEL_DIR}" "${RUN_ROOT}" "${LOCK}" <<'PY'
+import pathlib, statistics, sys
+from collections import Counter, defaultdict
 
-if [[ "${LOCK}" == true && ! -f "${LOCK_FILE}" ]]; then
-  python3 - "${RUN_ROOT}" "${LOCK_FILE}" <<'PY'
-import hashlib, json, pathlib, sys
+duel, root = map(pathlib.Path, sys.argv[1:3])
+sys.path.insert(0, str(duel / 'lib'))
+from integrity import allocation, create_lock, identifier, lock_digest, read_object, reconcile, require, run_state
 
-root, lock = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-packets = sorted(p.parent.name for p in (root / 'blind').glob('*/packet.md'))
-missing = [c for c in packets if not list((root / 'scores').glob(f'*/{c}.json'))]
-if missing:
-    sys.exit('[ERROR] 仍有未评分材料，拒绝锁定：' + ', '.join(missing))
-h = hashlib.sha256()
-for sub in ('blind', 'scores'):
-    for f in sorted((root / sub).rglob('*')):
-        if f.is_file():
-            h.update(str(f.relative_to(root)).encode())
-            h.update(f.read_bytes())
-json.dump({'packets': len(packets), 'digest': h.hexdigest()},
-          open(lock, 'w', encoding='utf-8'), indent=2)
-lock.chmod(0o600)
-print(f'评分已锁定：{len(packets)} 份材料，digest={h.hexdigest()[:16]}')
-PY
-fi
+lock = root / 'sealed/scores.lock'
+locked = lock.exists() or lock.is_symlink()
+if not locked and sys.argv[3] != 'true':
+    sys.exit('[ERROR] 尚未锁分。确认评分完成后加 --lock 再解封')
 
-if [[ ! -f "${LOCK_FILE}" ]]; then
-  die '尚未锁分。确认评分完成后加 --lock 再解封'
-fi
+try:
+    key, raters = allocation(root)
+    digest = lock_digest(root, key)
+    if locked:
+        stored = read_object(lock)
+        require(stored.get('version') == 1 and stored.get('digest') == digest,
+                '锁分摘要不一致或版本不支持，拒绝解封')
+    states = {c: run_state(root, c) for c in key}
+    pending = [c for c, (_, _, reasons) in states.items() if '缺少 done' in reasons]
+    require(not pending, '分配运行尚未结束（缺少 done）：' + ', '.join(sorted(pending)))
+    invalid = {c: reasons for c, (_, _, reasons) in states.items() if reasons}
+    valid = key.keys() - invalid.keys()
+    scores = reconcile(root, key, raters, valid)
+    checks = {}
+    for code in sorted(valid):
+        path = root / 'runs' / code / 'checks.json'
+        if path.exists():
+            checks[code] = read_object(path)
+    mapping = read_object(root / 'sealed/arms.json').get('mapping')
+    require(isinstance(mapping, dict) and mapping and all(identifier(a) for a in mapping)
+            and all(isinstance(v, str) and v for v in mapping.values())
+            and all(row['arm'] in mapping for row in key.values()), 'arms.json 与 allocation.runs 不符')
+    require(lock_digest(root, key) == digest, '工件在对账期间发生变化，摘要不一致')
+    if not locked:
+        create_lock(lock, digest)
+        print(f'评分已锁定：有效 {len(valid)}/{len(key)} 次运行，digest={digest[:16]}')
+except (OSError, ValueError) as exc:
+    sys.exit(f'[ERROR] {exc}')
 
-python3 - "${RUN_ROOT}" <<'PY'
-import json, pathlib, statistics, sys
-
-root = pathlib.Path(sys.argv[1])
-mapping = json.load(open(root / 'sealed/arms.json', encoding='utf-8'))['mapping']
 arms = sorted(mapping)
-
-key = {}
-for line in (root / 'sealed/blind_key.jsonl').read_text(encoding='utf-8').splitlines():
-    if line.strip():
-        row = json.loads(line)
-        key[row['code']] = row
-
-scores = {a: [] for a in arms}
-for path in sorted((root / 'scores').glob('*/*.json')):
-    code = path.stem
-    if code not in key:
-        continue
+planned = Counter((row['arm'], row['task']) for row in key.values())
+per_cell = defaultdict(list)
+for code, ratings in scores.items():
     row = key[code]
-    scores.setdefault(row['arm'], []).append(
-        {'task': row['task'], 'data': json.load(open(path, encoding='utf-8'))})
+    per_cell[row['arm'], row['task']].append(statistics.mean(ratings))
 
-checks, meta = {}, {}
-for rd in sorted((root / 'runs').iterdir()):
-    if (rd / 'checks.json').exists():
-        checks[rd.name] = json.load(open(rd / 'checks.json', encoding='utf-8'))
-    if (rd / 'execution.json').exists():
-        meta[rd.name] = json.load(open(rd / 'execution.json', encoding='utf-8'))
-
-
-def per_task(arm):
-    acc = {}
-    for row in scores.get(arm, []):
-        items = row['data']['items']
-        val = sum(i['score'] for i in items) / len(items) if items else 0.0
-        acc.setdefault(row['task'], []).append(val)
-    return {t: statistics.mean(v) for t, v in acc.items()}
-
-
-lines = ['# 双盲对比报告', '', f'- 运行根目录：`{root}`']
+lines = ['# 评分盲对比报告', '', f'- 运行根目录：`{root}`']
 lines.append('- 解封映射：' + '，'.join(f'`{a}` = {mapping[a]}' for a in arms))
+lines.append(f'- 分配 {len(key)} 次运行；有效 {len(valid)} 次；剔除 {len(invalid)} 次；评分者：' + '、'.join(raters))
 lines.append('')
-lines.append('## 1. 盲评得分（满分 1.00，按任务条目平均）')
+lines.append('## 1. 盲评得分（先平均条目和评分者，再按运行平均；n=有效/分配）')
 lines.append('| 任务 | ' + ' | '.join(f'{a}（{mapping[a]}）' for a in arms) + ' |')
 lines.append('|' + '---|' * (len(arms) + 1))
-tasks = sorted({t for a in arms for t in per_task(a)})
+tasks = sorted({row['task'] for row in key.values()})
 for task in tasks:
     cells = []
     for a in arms:
-        st = per_task(a).get(task)
-        cells.append(f'{st:.2f}' if st is not None else '—')
+        vals = per_cell[a, task]
+        mean = f'{statistics.mean(vals):.2f}' if vals else '—'
+        cells.append(f'{mean}（n={len(vals)}/{planned[a, task]}）')
     lines.append(f'| {task} | ' + ' | '.join(cells) + ' |')
 overall = []
 for a in arms:
-    vals = list(per_task(a).values())
+    vals = [statistics.mean(per_cell[a, t]) for t in tasks if per_cell[a, t]]
     overall.append(f'**{statistics.mean(vals):.2f}**' if vals else '—')
 lines.append('| **总体** | ' + ' | '.join(overall) + ' |')
 lines.append('')
+lines.append('总体为有有效样本的任务均分的等权平均；无效运行不记 0 分。')
+lines.append('')
+if invalid:
+    lines += ['### 剔除明细', '', '| 运行 | 臂 | 任务 | 重复 | 原因 |', '|---|---|---|---|---|']
+    for code, reasons in sorted(invalid.items()):
+        row = key[code]
+        lines.append(f"| {code} | {row['arm']} | {row['task']} | {row['repeat']} | {'；'.join(reasons)} |")
+    lines.append('')
 
 lines.append('## 2. 机械判定（客观事实，按臂统计）')
 facts = [
@@ -148,36 +140,28 @@ if h_codes:
     lines.append('')
 
 lines.append('## 3. 处理生效（操纵检查）')
-lines.append('| 臂 | 技能进入上下文 | 说明 |')
-lines.append('|---|---|---|')
+lines.append('| 臂 | discovery_ok 为 true / 分配 |')
+lines.append('|---|---|')
 for a in arms:
-    codes = [c for c, v in key.items() if v['arm'] == a]
-    rows = []
-    for c in codes:
-        p = root / 'runs' / c / 'manipulation.json'
-        if p.exists():
-            rows.append(json.load(open(p, encoding='utf-8')))
-    if not rows:
-        lines.append(f'| {a}（{mapping[a]}） | — | 缺操纵检查记录 |')
-        continue
-    ok_n = sum(1 for r in rows if r.get('treatment_applied'))
-    installed = max((r.get('skills_installed', 0) for r in rows), default=0)
-    note = '对照组，应为 0' if mapping[a] == 'bare-model' else '处理组，应 > 0'
-    lines.append(f'| {a}（{mapping[a]}） | {ok_n}/{len(rows)} | 安装 {installed} 个；{note} |')
+    rows = [states[c][1] for c, v in key.items() if v['arm'] == a]
+    ok_n = sum(r.get('discovery_ok') is True for r in rows)
+    lines.append(f'| {a}（{mapping[a]}） | {ok_n}/{len(rows)} |')
 lines.append('')
 
-lines.append('## 4. 成本')
+lines.append('## 4. 成本（仅有效运行）')
 lines.append('| 臂 | 平均耗时(s) | 平均总 token |')
 lines.append('|---|---|---|')
 for a in arms:
-    codes = [c for c, v in key.items() if v['arm'] == a and c in meta]
-    times = [meta[c]['wall_seconds'] for c in codes]
-    toks = [meta[c].get('token_usage', {}).get('total_tokens', 0) for c in codes]
-    lines.append(f'| {a}（{mapping[a]}） | {statistics.mean(times) if times else 0:.0f} | '
-                 f'{statistics.mean(toks) if toks else 0:.0f} |')
+    rows = [states[c][0] for c in valid if key[c]['arm'] == a]
+    times = [r['wall_seconds'] for r in rows if type(r.get('wall_seconds')) in (int, float)]
+    toks = [u['total_tokens'] for r in rows for u in [r.get('token_usage')]
+            if isinstance(u, dict) and type(u.get('total_tokens')) is int]
+    elapsed = f'{statistics.mean(times):.0f}' if times else '—'
+    tokens = f'{statistics.mean(toks):.0f}' if toks else '—'
+    lines.append(f'| {a}（{mapping[a]}） | {elapsed} | {tokens} |')
 lines.append('')
 lines.append('## 5. 解读边界')
-lines.append('- 每格样本量等于重复次数，属小样本：只报告逐任务差异，不做显著性结论。')
+lines.append('- 每格有效样本量可能低于分配的重复次数；只报告逐任务差异，不做显著性结论。')
 lines.append('- 执行者知道自己加载了哪套技能，因此这是评分盲，不是完全双盲。')
 lines.append('- 两套套件体量与提示长度不同，是已知混杂因素，见 `sealed/manifest.json`。')
 lines.append('- 机械判定只覆盖仓库中可观察的事实，不衡量解释质量与沟通效率。')

@@ -1,0 +1,96 @@
+diff --git a/cbmc-mps-finance-route-core/src/main/java/com/cbmc/biz/finance/business/credit/handler/BaseEstpUapStrategy.java b/cbmc-mps-finance-route-core/src/main/java/com/cbmc/biz/finance/business/credit/handler/BaseEstpUapStrategy.java
+index 84e3c9b138..75845331a6 100644
+--- a/cbmc-mps-finance-route-core/src/main/java/com/cbmc/biz/finance/business/credit/handler/BaseEstpUapStrategy.java
++++ b/cbmc-mps-finance-route-core/src/main/java/com/cbmc/biz/finance/business/credit/handler/BaseEstpUapStrategy.java
+@@ -2801,18 +2801,16 @@ public abstract class BaseEstpUapStrategy extends BaseCreditStrategy {
+ //        queryRequestDTO.setPlatOrgCertCode(financeResultBO.getPlatform());
+ //        // 平台企业平台编号
+ //        queryRequestDTO.setCoreCorpId(financeResultBO.getCoreCorpCertNo());
+-        this.queryFinResultBeforeProcess(queryRequestDTO, financeResultBO);
+         // 核心企业信息填充
+         SingleFactorCorpDTO coreCorpInfo = buildSingleFactorCore(financeResultBO);
+         queryRequestDTO.setCoreCorp(coreCorpInfo);
+ 
+         // 融资企业信息填充
+-        SingleFactorCorpDTO financeCorpInfo = buildSingleFactorCorp(
+-                financeResultBO.getCorpCertNo(),
+-                financeResultBO.getCorpCertNo()
+-        );
+-        financeCorpInfo.setCorpName(financeResultBO.getCorpName());
++        SingleFactorCorpDTO financeCorpInfo = buildSingleFactorCorp(financeResultBO);
+         queryRequestDTO.setFinanceCorp(financeCorpInfo);
++        // 额度企业信息填充
++        SingleFactorCorpDTO sourceCorp = buildSingleFactorSource(financeResultBO);
++        queryRequestDTO.setSourceCorp(sourceCorp);
+         // 应收账款编号 & 融资信用ID
+         queryRequestDTO.setUpperCreditId(financeResultBO.getFkCreditFinance());
+         queryRequestDTO.setFinanceCreditId(financeResultBO.getFkCreditFinance());
+@@ -2826,6 +2824,9 @@ public abstract class BaseEstpUapStrategy extends BaseCreditStrategy {
+         //融资债权编号
+         queryRequestDTO.setOutBizId(financeResultBO.getFkCredit());
+         queryRequestDTO.setStandardProductType(this.getStandardProductType());
++        //调用接口前处理
++        this.queryFinResultBeforeProcess(queryRequestDTO, financeResultBO);
++
+         log.info("中间件e收银行融资结果查询请求参数：{}", queryRequestDTO);
+         //融资结果查询流水号
+         UapEstpFinResultRespDTO responseDTO = uapEstpFinanceClient.queryFinanceResult(queryRequestDTO).tryResult();
+@@ -2838,11 +2839,20 @@ public abstract class BaseEstpUapStrategy extends BaseCreditStrategy {
+         return responseDTO;
+     }
+ 
+-    // 抽取公共方法用于构建 SingleFactorCorpDTO 实例
+-    protected SingleFactorCorpDTO buildSingleFactorCorp(String corpId, String corpIdCode) {
++    // 抽取公共方法用于构建 融资企业 实例
++    protected SingleFactorCorpDTO buildSingleFactorCorp(FinanceResultBO financeResultBO) {
++        SingleFactorCorpDTO dto = new SingleFactorCorpDTO();
++        dto.setCorpId(financeResultBO.getCorpCertNo());
++        dto.setCorpIdCode(financeResultBO.getCorpCertNo());
++        dto.setCorpName(financeResultBO.getCorpName());
++        return dto;
++    }
++
++    protected SingleFactorCorpDTO buildSingleFactorSource(FinanceResultBO financeResultBO) {
+         SingleFactorCorpDTO dto = new SingleFactorCorpDTO();
+-        dto.setCorpId(corpId);
+-        dto.setCorpIdCode(corpIdCode);
++        dto.setCorpId(financeResultBO.getCorpSourceCorpId());
++        dto.setCorpIdCode(financeResultBO.getCorpSourceCorpId());
++        dto.setCorpName(financeResultBO.getSourceCorpName());
+         return dto;
+     }
+ 
+@@ -3080,6 +3090,7 @@ public abstract class BaseEstpUapStrategy extends BaseCreditStrategy {
+         SingleFactorCorpDTO dto = new SingleFactorCorpDTO();
+         dto.setCorpId(financeResultBO.getCoreCorpCertNo());
+         dto.setCorpIdCode(financeResultBO.getCoreCorpCertNo());
++        dto.setCorpName(financeResultBO.getCoreCropName());
+         return dto;
+     }
+ 
+diff --git a/cbmc-mps-sdk-finance-route/pom.xml b/cbmc-mps-sdk-finance-route/pom.xml
+index 9028530360..c8582893ff 100644
+--- a/cbmc-mps-sdk-finance-route/pom.xml
++++ b/cbmc-mps-sdk-finance-route/pom.xml
+@@ -6,7 +6,7 @@
+     <modelVersion>4.0.0</modelVersion>
+     <groupId>com.cbmc</groupId>
+     <artifactId>cbmc-mps-sdk-finance-route</artifactId>
+-    <version>3.0.0-20260911-SNAPSHOT</version>
++    <version>3.0.0-20260918-cmb-SNAPSHOT</version>
+     <name>cbmc-mps-sdk-finance-route</name>
+     <description>商银融通资金路由服务</description>
+ 
+diff --git a/pom.xml b/pom.xml
+index 70b0d13382..b5c9984942 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -27,7 +27,7 @@
+         <start-class>com.cbmc.biz.finance.CbmcFinanceCreditApplication</start-class>
+         <bmp.agent.version>1.2.3-SNAPSHOT</bmp.agent.version>
+         <!-- finance-route统一版本 -->
+-        <route.version>3.0.0-20260911-SNAPSHOT</route.version>
++        <route.version>3.0.0-20260918-cmb-SNAPSHOT</route.version>
+         <!--商银sdk版本管理-->
+         <cbmc.mps.sdk.adapter>3.0.0-20260828-SNAPSHOT</cbmc.mps.sdk.adapter>
+         <cbmc.biz.sdk.credit>3.0.0-20260911-SNAPSHOT</cbmc.biz.sdk.credit>

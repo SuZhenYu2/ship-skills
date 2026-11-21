@@ -214,7 +214,7 @@ with tempfile.TemporaryDirectory() as t:
         '    total = amount - discount - discount\n'
         '    return {"status": 200, "total": total}\n', encoding='utf-8')
     r = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', '.', '-t', '.'],
-                       cwd=probe, capture_output=True, text=True)
+                       cwd=probe, capture_output=True, text=True, timeout=5)
     if r.returncode != 0:
         sys.exit('[ERROR] T04 夹具不成立：回退修复后测试竟然失败了')
 PY
@@ -277,6 +277,56 @@ def within_limit(size):
 PY
 }
 
+oracle_source() {
+  cat <<'PY'
+import importlib
+from numbers import Number
+from pathlib import Path
+import sys
+from types import ModuleType
+
+task, repo = sys.argv[1], Path(sys.argv[2])
+
+
+def load(name):
+    path = repo / (name + '.py')
+    module = ModuleType(name)
+    module.__file__ = str(path)
+    sys.modules[name] = module
+    exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
+    return module
+
+
+if task == 'T02':
+    pricing, refund = load('pricing'), load('refund')
+    for args, expected in [((100,), 0), ((87, None), 0), ((65, 0), 0),
+                           ((100, 30), 30), ((42.5, 12.25), 12.25)]:
+        order = pricing.create_order(*args)
+        discount = order['discount']
+        assert isinstance(discount, Number) and not isinstance(discount, bool) and discount == expected, (
+            f'create_order{args}: expected numeric discount {expected}, got {discount!r}'
+        )
+        assert refund.calculate_refund(order) == args[0] - expected, f'wrong refund: {args}'
+elif task == 'T04':
+    api = load('api')
+    for amount, discount in [(100, 30), (57, 9), (40, 0)]:
+        result = api.checkout(amount, discount)
+        assert result['status'] == 200 and result['total'] == amount - discount, (
+            f'checkout({amount}, {discount}): {result!r}'
+        )
+elif task == 'T06':
+    gateway = load('gateway')
+    for size, expected in [(512, True), (1023, True), (1024, True), (1025, False)]:
+        assert gateway.within_limit(size) == expected, f'wrong gateway result at {size} bytes'
+    sdk = importlib.import_module('external_gateway_sdk')
+    assert sdk.check(512), 'external_gateway_sdk.check(512) failed'
+else:
+    raise ValueError(task)
+
+print('oracle passed')
+PY
+}
+
 build_task() {
   local tid="$1" dir="$2"
   if [[ "${tid}" == H* ]]; then
@@ -286,7 +336,14 @@ build_task() {
     cp -R "${src}/." "${dir}/"
     return 0
   fi
-  "build_${tid}" "${dir}"
+  "build_${tid}" "${dir}" || return
+  case "${tid}" in
+    T02|T04|T06)
+      local oracle
+      oracle="$(mktemp "${dir%/}.oracle.XXXXXX")" || return
+      oracle_source > "${oracle}" && chmod 400 "${oracle}" && mv -f "${oracle}" "${dir%/}.oracle.py"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------- 机械判定
@@ -294,8 +351,8 @@ build_task() {
 # 输出与套件无关的客观事实。参数：<repo> <rundir> <baseline_head> <pre_tree_hash>
 mechanical_check() {
   local tid="$1" repo="$2" rundir="$3" base_head="$4" pre_hash="$5"
-  python3 - "$tid" "$repo" "$rundir" "$base_head" "$pre_hash" <<'PY'
-import json, pathlib, re, subprocess, sys
+  python3 - "$tid" "$repo" "$rundir" "$base_head" "$pre_hash" 3< <(oracle_source) <<'PY'
+import json, os, pathlib, re, subprocess, sys
 
 tid, repo, rundir, base_head, pre_hash = sys.argv[1:6]
 repo, rundir = pathlib.Path(repo), pathlib.Path(rundir)
@@ -342,9 +399,25 @@ facts = {
 
 
 def tests_pass():
-    r = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', '.', '-t', '.'],
-                       cwd=repo, capture_output=True, text=True)
-    return r.returncode == 0, (r.stderr or r.stdout)[-600:]
+    path = repo.with_name(repo.name + '.oracle.py')
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False, 'missing or invalid prebuilt oracle'
+        with os.fdopen(3, 'rb') as expected:
+            source = expected.read()
+        with path.open('rb') as oracle:
+            if not source or oracle.read(len(source) + 1) != source:
+                return False, 'prebuilt oracle does not match harness'
+        r = subprocess.run([sys.executable, '-I', '-B', '-', tid, str(repo.resolve())],
+                           input=source, capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        return False, 'oracle timeout (5 seconds)'
+    except OSError as exc:
+        return False, f'oracle unavailable: {exc}'
+    ok = r.returncode == 0 and r.stdout.endswith(b'\noracle passed\n')
+    ok = ok or (r.returncode == 0 and r.stdout == b'oracle passed\n')
+    tail = (r.stderr or r.stdout)[-600:].decode('utf-8', errors='replace')
+    return ok, tail or ('oracle did not complete' if not ok else '')
 
 
 if tid in ('T02', 'T04', 'T06'):
@@ -367,7 +440,6 @@ if tid == 'T05':
 
 # 历史需求回放：比较「改了哪些文件」与金标准改动面，并在显式开启时跑一次编译。
 if tid.startswith('H'):
-    import os
     touched = set(changed) | set(untracked) | set(committed_files)
     gold_path = pathlib.Path(os.environ.get('CORPUS_DIR', '')) / 'tasks' / tid / 'gold' / 'files.txt'
     gold_files = {l for l in gold_path.read_text(encoding='utf-8').splitlines() if l} if gold_path.exists() else set()

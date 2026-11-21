@@ -1,0 +1,20 @@
+{
+  "id": "H08",
+  "kind": "historical",
+  "repo": "cbmc-biz-credit",
+  "req": "7115235022",
+  "title": "e信融资主管二次签署：协议文件配置步骤",
+  "base": "80d3c39dc6ece96eac6d87777d046364c8226f21",
+  "tip": "42391a3f5a087459760902a29794d4e07b8cadc8",
+  "branch": "feature-20261010-7115235022",
+  "gold": {
+    "files": 3,
+    "lines": 21,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H08",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

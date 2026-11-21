@@ -41,6 +41,27 @@ describe('arena-state.ts', () => {
     assert.equal(fs.existsSync(path.join(repo, '.ship')), false);
   });
 
+  it('AC5 only excludes task state on a fresh write', () => {
+    runState(repo, ['--task', 'x', 'on']);
+    for (const [file, status] of [['.ship/specs/x.md', 1], ['.ship/tasks/x/arena.json', 0]] as const) {
+      assert.equal(spawnSync('git', ['-C', repo, 'check-ignore', '-q', file]).status, status, file);
+    }
+    assert.equal(fs.existsSync(path.join(repo, '.gitignore')), false);
+  });
+
+  it('AC5 migrates exact legacy rules only on write', () => {
+    const exclude = path.join(repo, '.git/info/exclude');
+    const before = '# /.ship/\r\n/.ship/\r\n/.ship/local/\r\n/.ship/\r\nnotes';
+    fs.writeFileSync(exclude, before);
+    runState(repo, ['--task', 'x', 'status']);
+    runState(repo, ['--task', 'x', 'check', '--generation', 'old'], false);
+    assert.equal(fs.readFileSync(exclude, 'utf8'), before);
+    for (const action of ['off', 'on']) {
+      runState(repo, ['--task', 'x', action]);
+      assert.equal(fs.readFileSync(exclude, 'utf8'), '# /.ship/\r\n/.ship/tasks/\r\n/.ship/local/\r\nnotes');
+    }
+  });
+
   it('on/off roundtrip and task isolation', () => {
     assert.match(runState(repo, ['--task', 'order-cancel', 'on']), /ON/);
     const statePath = path.join(repo, '.ship', 'tasks', 'order-cancel', 'arena.json');
@@ -89,8 +110,11 @@ describe('arena-state.ts', () => {
     assert.match(planOut, /计划策略/);
     assert.match(planOut, /双候选/);
     const commitOut = runState(repo, ['--task', 'test', 'status', '--stage', 'ship-commit']);
-    assert.match(commitOut, /Lead/);
-    runState(repo, ['--task', 'test', 'status', '--stage', 'unknown'], false);
+    assert.match(commitOut, /代码提交和证据提交分别授权/);
+    assert.match(runState(repo, ['--task', 'test', 'status', '--stage', 'ship-review']), /未接受的 MAJOR/);
+    for (const stage of ['unknown', 'toString', '__proto__']) {
+      runState(repo, ['--task', 'test', 'status', '--stage', stage], false);
+    }
   });
 
   it('symlink escape rejected', () => {
@@ -137,6 +161,59 @@ describe('arena-state.ts', () => {
     runState(repo, ['--task', 'test', 'check', '--generation', current]);
     runState(repo, ['--task', 'test', 'status']);
     assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).generation, current);
+  });
+
+  it('candidate handoff rejects stale labels and empty evidence without writing state', () => {
+    runState(repo, ['--task', 'handoff', 'on']);
+    const statePath = path.join(repo, '.ship/tasks/handoff/arena.json');
+    const stateBefore = fs.readFileSync(statePath, 'utf8');
+    const generation = JSON.parse(stateBefore).generation;
+    const input = {
+      repo: fs.realpathSync(repo), task: 'handoff', stage: 'ship-plan', run_id: 'plan-2', generation,
+      snapshot: { head: 'a'.repeat(40), worktree: 'b'.repeat(64) },
+    };
+    const result = {
+      ...input, conclusion: '选择局部修复', evidence: ['src/example.ts:1'],
+      risks: [], assumptions: [], verification: ['node --test'],
+    };
+    const inputPath = path.join(repo, '.ship/tasks/handoff/input.json');
+    const resultPath = path.join(repo, '.ship/tasks/handoff/result.json');
+    fs.writeFileSync(inputPath, JSON.stringify(input));
+    const args = ['--task', 'handoff', 'check', '--stage', 'ship-plan', '--generation', generation,
+      '--input', inputPath, '--candidate', resultPath];
+    fs.writeFileSync(resultPath, JSON.stringify(result));
+    assert.match(runState(repo, args), /不证明证据真实/);
+    for (const change of [
+      { repo: repo + '-other' }, { task: 'other' }, { stage: 'ship-review' }, { run_id: 'plan-1' },
+      { generation: 'c'.repeat(32) }, { snapshot: { ...input.snapshot, head: 'c'.repeat(40) } },
+      { snapshot: { ...input.snapshot, worktree: 'c'.repeat(64) } },
+      { snapshot: null }, { conclusion: ' ' }, { evidence: [] }, { evidence: [' '] },
+      { verification: [] }, { risks: 'none' }, { assumptions: [null] },
+    ]) {
+      fs.writeFileSync(resultPath, JSON.stringify({ ...result, ...change }));
+      runState(repo, args, false);
+      assert.equal(fs.readFileSync(statePath, 'utf8'), stateBefore);
+    }
+    for (const text of ['', 'null', '[]', '{']) {
+      fs.writeFileSync(resultPath, text);
+      runState(repo, args, false);
+    }
+    fs.writeFileSync(resultPath, JSON.stringify(result));
+    fs.writeFileSync(inputPath, JSON.stringify({ ...input, stage: '__proto__' }));
+    runState(repo, args, false);
+    fs.writeFileSync(inputPath, JSON.stringify(input));
+    runState(repo, ['--task', 'handoff', 'off']);
+    runState(repo, args, false);
+    runState(repo, ['--task', 'handoff', 'on']);
+    runState(repo, args, false);
+  });
+
+  it('candidate paths are paired and only accepted by check', () => {
+    runState(repo, ['--task', 'test', 'on']);
+    const generation = JSON.parse(fs.readFileSync(path.join(repo, '.ship/tasks/test/arena.json'), 'utf8')).generation;
+    runState(repo, ['--task', 'test', 'check', '--generation', generation, '--input', 'missing'], false);
+    runState(repo, ['--task', 'test', 'check', '--generation', generation, '--candidate', 'missing'], false);
+    runState(repo, ['--task', 'test', 'status', '--input', 'a', '--candidate', 'b'], false);
   });
 
   it('legacy enabled config requires explicit reenable', () => {

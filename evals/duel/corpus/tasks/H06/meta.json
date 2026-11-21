@@ -1,0 +1,20 @@
+{
+  "id": "H06",
+  "kind": "historical",
+  "repo": "cbmc-biz-credit",
+  "req": "7051635146",
+  "title": "新增监管备案价格查询接口",
+  "base": "4d972a46be78b5194504d64a5623458dfd8f41aa",
+  "tip": "047901c999ff4d4f34ae7cf8f957e59a08210ebc",
+  "branch": "feature-20260723-7051635146",
+  "gold": {
+    "files": 6,
+    "lines": 273,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H06",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

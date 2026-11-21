@@ -1,0 +1,22 @@
+{
+  "id": "H10",
+  "kind": "historical",
+  "repo": "cbmc-biz-product",
+  "req": "7110538665",
+  "title": "跨仓迁移e收息费承担方范围校验与历史数据处理",
+  "base": "110b4301532f142b6f803bee5e1f3193f0748935",
+  "tip": "d113da83c0a47fec5eca240882122e3c94f72879",
+  "branch": "feature-20261010-7110538665",
+  "gold": {
+    "files": 3,
+    "lines": 733,
+    "tests": [
+      "cbmc-biz-product-web/src/test/java/com/ccbscf/api/web/product/handler/core/impl/EstpProductFinanceCoreStrategyTest.java"
+    ]
+  },
+  "fixture": "/tmp/ship-corpus/H10",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

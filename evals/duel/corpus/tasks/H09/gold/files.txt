@@ -1,0 +1,5 @@
+cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionApplyServiceImpl.java
+cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionInteractionServiceImpl.java
+cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/controller/curl/CurlController.java
+cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/EfOrderGoodsDomainService.java
+cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/impl/EfOrderGoodsDomainServiceImpl.java

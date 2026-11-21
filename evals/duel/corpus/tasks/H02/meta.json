@@ -1,0 +1,22 @@
+{
+  "id": "H02",
+  "kind": "historical",
+  "repo": "scf-biz-product-sdk",
+  "req": "7160604038",
+  "title": "e收有追保理：新增本金比对模式配置",
+  "base": "91570a07980a2ceeebf658fae32f4632a9b7e6e2",
+  "tip": "c62060671599ee466b7f2c5a76bda63610130d08",
+  "branch": "feature-20261105-7160604038",
+  "gold": {
+    "files": 6,
+    "lines": 123,
+    "tests": [
+      "src/test/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnumTest.java"
+    ]
+  },
+  "fixture": "/tmp/ship-corpus/H02",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

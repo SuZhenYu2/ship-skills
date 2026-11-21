@@ -1,0 +1,6 @@
+src/main/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnum.java
+src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlow.java
+src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowDTO.java
+src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowT.java
+src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowTDTO.java
+src/test/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnumTest.java

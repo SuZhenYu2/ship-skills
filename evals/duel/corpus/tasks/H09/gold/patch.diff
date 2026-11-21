@@ -1,0 +1,363 @@
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionApplyServiceImpl.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionApplyServiceImpl.java
+index 87ca052a..3f35ef89 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionApplyServiceImpl.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionApplyServiceImpl.java
+@@ -413,9 +413,14 @@ public class EfRedemptionApplyServiceImpl implements EfRedemptionApplyService {
+         batchInsertRedemptionApplyVehicle(efOrder.getPkEfOrder(), efOrderRedemptionApplyAfter.getPkRedemptionApply(), reqDTO);
+ 
+         // 凭指令发货场景：还款申请提交后，按本次赎货金额、本次赎货数量扣减剩余货物金额、剩余货物数量
++        // 顺序：先新增 → 再查询 → 再扣减，确保数据完整性
+         if (redemptionFlagBO.isDeliveryFlag()) {
+-            log.info("凭指令发货场景，开始扣减货物剩余金额/数量，还款申请编号：{}", redemptionRepayNo);
+-            Boolean deductResult = efOrderGoodsDomainService.deductGoods(efOrderRedemptionApplyAfter.getPkRedemptionApply());
++            log.info("凭指令发货场景，开始查询并扣减货物剩余金额/数量，还款申请编号：{}", redemptionRepayNo);
++            List<TEfOrderRedemptionApplyGoods> applyGoodsList =
++                    efRedemptionApplyQueryDomainService.queryRedemptionApplyGoodsByApplyPk(efOrderRedemptionApplyAfter.getPkRedemptionApply());
++            log.info("凭指令发货场景，查询到{}条货物明细，开始扣减，还款申请编号：{}", applyGoodsList.size(), redemptionRepayNo);
++
++            Boolean deductResult = efOrderGoodsDomainService.deductGoods(applyGoodsList);
+             log.info("凭指令发货场景，货物扣减成功，还款申请编号：{}，结果：{}", redemptionRepayNo, deductResult);
+         }
+ 
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionInteractionServiceImpl.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionInteractionServiceImpl.java
+index da03ed8a..bfb9e7bf 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionInteractionServiceImpl.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/redemption/impl/EfRedemptionInteractionServiceImpl.java
+@@ -33,6 +33,7 @@ import com.cbmc.biz.order.core.domain.progress.domain.model.CreateOrderProgressD
+ import com.cbmc.biz.order.core.domain.progress.domain.model.CreateRedemptionApplyProgressDetailReq;
+ import com.cbmc.biz.order.core.domain.redemption.dao.sdo.jooq.entities.tables.pojos.TEfOrderRedemption;
+ import com.cbmc.biz.order.core.domain.redemption.dao.sdo.jooq.entities.tables.pojos.TEfOrderRedemptionApply;
++import com.cbmc.biz.order.core.domain.redemption.dao.sdo.jooq.entities.tables.pojos.TEfOrderRedemptionApplyGoods;
+ import com.cbmc.biz.order.core.domain.redemption.domain.EfRedemptionApplyQueryDomainService;
+ import com.cbmc.biz.order.core.domain.redemption.domain.EfRedemptionOperateDomainService;
+ import com.cbmc.biz.order.core.domain.redemption.domain.EfRedemptionQueryDomainService;
+@@ -421,9 +422,23 @@ public class EfRedemptionInteractionServiceImpl implements EfRedemptionInteracti
+         TEfOrderRedemption tEfOrderRedemptionAfter =
+                 updateRedemptionApplyResp.getEfOrderRedemptionAfter();
+ 
++        // 恢复订单货物剩余金额/数量（仅凭指令发货场景）
++        // 顺序：先查询 → 先恢复 → 再删除，确保数据完整性
++        if (tEfOrderRedemptionAfter.getDeliveryFlag() != null && tEfOrderRedemptionAfter.getDeliveryFlag()) {
++            log.info("凭指令发货场景，开始查询并恢复货物明细，还款申请编号：{}", noticeFailDTO.getRedemptionRepayNo());
++            List<TEfOrderRedemptionApplyGoods> applyGoodsList =
++                    efRedemptionApplyQueryDomainService.queryRedemptionApplyGoodsByApplyPk(tEfOrderRedemptionApply.getPkRedemptionApply());
++            log.info("凭指令发货场景，查询到{}条货物明细，开始恢复，还款申请编号：{}", applyGoodsList.size(), noticeFailDTO.getRedemptionRepayNo());
++
++            Boolean restoreResult = efOrderGoodsDomainService.restoreGoods(applyGoodsList);
++            log.info("凭指令发货场景，货物恢复成功，还款申请编号：{}，结果：{}", noticeFailDTO.getRedemptionRepayNo(), restoreResult);
++        } else {
++            log.info("非凭指令发货场景，无需恢复货物，还款申请编号：{}", noticeFailDTO.getRedemptionRepayNo());
++        }
++
++        // 删除货物明细和车辆信息
+         DeleteRedemptionApplyGoodsReq goodsReq = new DeleteRedemptionApplyGoodsReq();
+         goodsReq.setPkRedemptionApply(tEfOrderRedemptionApply.getPkRedemptionApply());
+-
+         efRedemptionOperateDomainService.deleteRedemptionApplyGoods(goodsReq);
+ 
+         DeleteRedemptionApplyVehicleReq vehicleReq = new DeleteRedemptionApplyVehicleReq();
+@@ -437,15 +452,6 @@ public class EfRedemptionInteractionServiceImpl implements EfRedemptionInteracti
+         redemptionDiscardPriceReq.setProductTypeCcbscf(CcbscfProductTypeEnum.ORDER);
+         priceDomainService.discardPrice(redemptionDiscardPriceReq);
+ 
+-        // 恢复订单货物剩余金额/数量（仅凭指令发货场景）
+-        if (tEfOrderRedemptionAfter.getDeliveryFlag() != null && tEfOrderRedemptionAfter.getDeliveryFlag()) {
+-            log.info("凭指令发货场景，开始恢复货物剩余金额/数量，还款申请编号：{}", noticeFailDTO.getRedemptionRepayNo());
+-            Boolean restoreResult = efOrderGoodsDomainService.restoreGoods(tEfOrderRedemptionApplyAfter.getPkRedemptionApply());
+-            log.info("凭指令发货场景，货物恢复成功，还款申请编号：{}，结果：{}", noticeFailDTO.getRedemptionRepayNo(), restoreResult);
+-        } else {
+-            log.info("非凭指令发货场景，无需恢复货物，还款申请编号：{}", noticeFailDTO.getRedemptionRepayNo());
+-        }
+-
+         // 生成流水
+         CreateRedemptionApplyProgressDetailReq createRedemptionApplyProgressDetailReq = new CreateRedemptionApplyProgressDetailReq();
+         createRedemptionApplyProgressDetailReq.setEfOrderRedemptionApplyAfter(updateRedemptionApplyResp.getEfOrderRedemptionApplyAfter());
+@@ -511,35 +517,41 @@ public class EfRedemptionInteractionServiceImpl implements EfRedemptionInteracti
+ 
+         UpdateRedemptionApplyResp updateRedemptionApplyResp =
+                 efRedemptionOperateDomainService.updateRedemptionApply(updateRedemptionApplyReq);
+-        DeleteRedemptionApplyGoodsReq goodsReq = new DeleteRedemptionApplyGoodsReq();
+-        goodsReq.setPkRedemptionApply(tEfOrderRedemptionApply.getPkRedemptionApply());
+ 
++        TEfOrderRedemptionApply tEfOrderRedemptionApplyAfter =
++                updateRedemptionApplyResp.getEfOrderRedemptionApplyAfter();
++        TEfOrderRedemption tEfOrderRedemptionAfter =
++                updateRedemptionApplyResp.getEfOrderRedemptionAfter();
+ 
++        // 恢复订单货物剩余金额/数量（仅凭指令发货场景）
++        // 顺序：先查询 → 先恢复 → 再删除，确保数据完整性
++        if (tEfOrderRedemptionAfter.getDeliveryFlag() != null && tEfOrderRedemptionAfter.getDeliveryFlag()) {
++            log.info("凭指令发货场景，开始查询并恢复货物明细，还款申请编号：{}", repayCancelDTO.getRedemptionRepayNo());
++            List<TEfOrderRedemptionApplyGoods> applyGoodsList =
++                    efRedemptionApplyQueryDomainService.queryRedemptionApplyGoodsByApplyPk(tEfOrderRedemptionApply.getPkRedemptionApply());
++            log.info("凭指令发货场景，查询到{}条货物明细，开始恢复，还款申请编号：{}", applyGoodsList.size(), repayCancelDTO.getRedemptionRepayNo());
++
++            Boolean restoreResult = efOrderGoodsDomainService.restoreGoods(applyGoodsList);
++            log.info("凭指令发货场景，货物恢复成功，还款申请编号：{}，结果：{}", repayCancelDTO.getRedemptionRepayNo(), restoreResult);
++        } else {
++            log.info("非凭指令发货场景，无需恢复货物，还款申请编号：{}", repayCancelDTO.getRedemptionRepayNo());
++        }
++
++        // 删除货物明细和车辆信息
++        DeleteRedemptionApplyGoodsReq goodsReq = new DeleteRedemptionApplyGoodsReq();
++        goodsReq.setPkRedemptionApply(tEfOrderRedemptionApply.getPkRedemptionApply());
+         efRedemptionOperateDomainService.deleteRedemptionApplyGoods(goodsReq);
+ 
+         DeleteRedemptionApplyVehicleReq vehicleReq = new DeleteRedemptionApplyVehicleReq();
+         vehicleReq.setPkRedemptionApply(tEfOrderRedemptionApply.getPkRedemptionApply());
+         efRedemptionOperateDomainService.deleteRedemptionApplyVehicle(vehicleReq);
+ 
+-        TEfOrderRedemptionApply tEfOrderRedemptionApplyAfter =
+-                updateRedemptionApplyResp.getEfOrderRedemptionApplyAfter();
+-        TEfOrderRedemption tEfOrderRedemptionAfter =
+-                updateRedemptionApplyResp.getEfOrderRedemptionAfter();
+-
+         // 作废价格快照
+         RedemptionDiscardPriceReq redemptionDiscardPriceReq = new RedemptionDiscardPriceReq();
+         redemptionDiscardPriceReq.setFinanceNo(tEfOrderRedemptionApplyAfter.getFinanceNo());
+         redemptionDiscardPriceReq.setRedemptionRepayNo(tEfOrderRedemptionApplyAfter.getRedemptionRepayNo());
+         redemptionDiscardPriceReq.setProductTypeCcbscf(CcbscfProductTypeEnum.ORDER);
+         priceDomainService.discardPrice(redemptionDiscardPriceReq);
+-        // 恢复订单货物剩余金额/数量（仅凭指令发货场景）
+-        if (tEfOrderRedemptionAfter.getDeliveryFlag() != null && tEfOrderRedemptionAfter.getDeliveryFlag()) {
+-            log.info("凭指令发货场景，开始恢复货物剩余金额/数量，还款申请编号：{}", repayCancelDTO.getRedemptionRepayNo());
+-            Boolean restoreResult = efOrderGoodsDomainService.restoreGoods(tEfOrderRedemptionApplyAfter.getPkRedemptionApply());
+-            log.info("凭指令发货场景，货物恢复成功，还款申请编号：{}，结果：{}", repayCancelDTO.getRedemptionRepayNo(), restoreResult);
+-        } else {
+-            log.info("非凭指令发货场景，无需恢复货物，还款申请编号：{}", repayCancelDTO.getRedemptionRepayNo());
+-        }
+         // 生成流水
+         CreateRedemptionApplyProgressDetailReq createRedemptionApplyProgressDetailReq = new CreateRedemptionApplyProgressDetailReq();
+         createRedemptionApplyProgressDetailReq.setEfOrderRedemptionApplyAfter(updateRedemptionApplyResp.getEfOrderRedemptionApplyAfter());
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/controller/curl/CurlController.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/controller/curl/CurlController.java
+index 22037170..c3110c65 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/controller/curl/CurlController.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/controller/curl/CurlController.java
+@@ -19,12 +19,12 @@ import com.cbmc.biz.order.core.domain.finance.domain.FinanceDomainService;
+ import com.cbmc.biz.order.core.domain.finance.domain.model.QueryFinanceReq;
+ import com.cbmc.biz.order.core.domain.finance.domain.model.QueryFinanceResp;
+ import com.cbmc.biz.order.core.domain.finance.domain.model.RepaymentBalanceQueryResp;
++import com.cbmc.biz.order.core.domain.message.sender.WxNoticeSender;
++import com.cbmc.biz.order.core.domain.message.sender.model.RepaymentWarningBO;
+ import com.cbmc.biz.order.core.domain.order.dao.sdo.jooq.entities.tables.pojos.TEfOrder;
+ import com.cbmc.biz.order.core.domain.order.domain.EfOrderGoodsDomainService;
+ import com.cbmc.biz.order.core.domain.order.domain.EfOrderOperateDomainService;
+ import com.cbmc.biz.order.core.domain.order.domain.EfOrderQueryDomainService;
+-import com.cbmc.biz.order.core.domain.message.sender.WxNoticeSender;
+-import com.cbmc.biz.order.core.domain.message.sender.model.RepaymentWarningBO;
+ import com.cbmc.biz.order.core.domain.price.domain.impl.RedemptionPriceDomainServiceImpl;
+ import com.cbmc.biz.order.core.domain.price.domain.model.PriceDetailResp;
+ import com.cbmc.biz.order.core.domain.price.domain.model.RedemptionInquirePriceReq;
+@@ -51,12 +51,17 @@ import com.ccbscf.common.search.ReqPageCond;
+ import com.ccbscf.common.search.SearchParameter;
+ import com.ccbscf.common.search.SearchResult;
+ import com.ccbscf.common.util.BeanUtils;
++import java.util.List;
+ import lombok.extern.slf4j.Slf4j;
+ import org.apache.commons.collections4.CollectionUtils;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.web.bind.annotation.*;
+-
+-import java.util.List;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.PostMapping;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestMethod;
++import org.springframework.web.bind.annotation.RequestParam;
++import org.springframework.web.bind.annotation.RestController;
+ 
+ /**
+  * @Description 异常情况下，特殊curl处理
+@@ -329,49 +334,5 @@ public class CurlController {
+         orderDeliveryNoticeDomainService.subtractOrderDeliveryRemain(BeanUtils.mapc(goodsDTOList, EfOrderDeliveryConfirmGoodsBO.class));
+     }
+ 
+-    /**
+-     * 扣减货物剩余金额/数量
+-     * <p>
+-     * curl调用示例：
+-     * curl -X POST "http://localhost:8080/v1/curl/ef/goods/deduct?pkRedemptionApply=xxx"
+-     *
+-     * @param pkRedemptionApply 还款申请主键
+-     * @return 执行结果
+-     */
+-    @RequestMapping(value = "/v1/curl/ef/goods/deduct", method = RequestMethod.POST)
+-    public String deductGoods(@RequestParam(value = "pkRedemptionApply") String pkRedemptionApply) {
+-        log.info("curl接口-扣减货物剩余金额/数量开始，参数：pkRedemptionApply={}", pkRedemptionApply);
+-
+-        try {
+-            Boolean result = efOrderGoodsDomainService.deductGoods(pkRedemptionApply);
+-            log.info("curl接口-扣减货物剩余金额/数量成功，参数：pkRedemptionApply={}，结果：{}", pkRedemptionApply, result);
+-            return "扣减成功，还款申请主键：" + pkRedemptionApply;
+-        } catch (Exception e) {
+-            log.error("curl接口-扣减货物剩余金额/数量失败，参数：pkRedemptionApply={}，异常：", pkRedemptionApply, e);
+-            return "扣减失败：" + e.getMessage();
+-        }
+-    }
+ 
+-    /**
+-     * 恢复货物剩余金额/数量
+-     * <p>
+-     * curl调用示例：
+-     * curl -X POST "http://localhost:8080/v1/curl/ef/goods/restore?pkRedemptionApply=xxx"
+-     *
+-     * @param pkRedemptionApply 还款申请主键
+-     * @return 执行结果
+-     */
+-    @RequestMapping(value = "/v1/curl/ef/goods/restore", method = RequestMethod.POST)
+-    public String restoreGoods(@RequestParam(value = "pkRedemptionApply") String pkRedemptionApply) {
+-        log.info("curl接口-恢复货物剩余金额/数量开始，参数：pkRedemptionApply={}", pkRedemptionApply);
+-
+-        try {
+-            Boolean result = efOrderGoodsDomainService.restoreGoods(pkRedemptionApply);
+-            log.info("curl接口-恢复货物剩余金额/数量成功，参数：pkRedemptionApply={}，结果：{}", pkRedemptionApply, result);
+-            return "恢复成功，还款申请主键：" + pkRedemptionApply;
+-        } catch (Exception e) {
+-            log.error("curl接口-恢复货物剩余金额/数量失败，参数：pkRedemptionApply={}，异常：", pkRedemptionApply, e);
+-            return "恢复失败：" + e.getMessage();
+-        }
+-    }
+ }
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/EfOrderGoodsDomainService.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/EfOrderGoodsDomainService.java
+index cafc759c..d8c7bbe9 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/EfOrderGoodsDomainService.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/EfOrderGoodsDomainService.java
+@@ -1,7 +1,10 @@
+ package com.cbmc.biz.order.core.domain.order.domain;
+ 
++import com.cbmc.biz.order.core.domain.redemption.dao.sdo.jooq.entities.tables.pojos.TEfOrderRedemptionApplyGoods;
+ import org.jetbrains.annotations.NotNull;
+ 
++import java.util.List;
++
+ /**
+  * 订单货物领域服务
+  * <p>
+@@ -14,22 +17,22 @@ public interface EfOrderGoodsDomainService {
+      * <p>
+      * 用于还款申请提交时扣减货物剩余金额和数量
+      *
+-     * @param pkRedemptionApply 还款申请主键
++     * @param applyGoodsList 还款申请货品明细列表（由调用方在新增后查询传入）
+      * @return 是否成功
+      */
+     @NotNull
+-    Boolean deductGoods(String pkRedemptionApply);
++    Boolean deductGoods(List<TEfOrderRedemptionApplyGoods> applyGoodsList);
+ 
+     /**
+      * 恢复货物剩余金额/数量
+      * <p>
+      * 用于还款申请取消/失败时恢复货物剩余金额和数量
+      *
+-     * @param pkRedemptionApply 还款申请主键
++     * @param applyGoodsList 还款申请货品明细列表（由调用方在删除前查询传入）
+      * @return 是否成功
+      */
+     @NotNull
+-    Boolean restoreGoods(String pkRedemptionApply);
++    Boolean restoreGoods(List<TEfOrderRedemptionApplyGoods> applyGoodsList);
+ 
+     /**
+      * 初始化历史订单货物剩余金额和数量
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/impl/EfOrderGoodsDomainServiceImpl.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/impl/EfOrderGoodsDomainServiceImpl.java
+index 928c595c..cabbc2f9 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/impl/EfOrderGoodsDomainServiceImpl.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/domain/order/domain/impl/EfOrderGoodsDomainServiceImpl.java
+@@ -7,7 +7,6 @@ import com.cbmc.biz.order.core.domain.order.dao.sdo.jooq.entities.tables.pojos.T
+ import com.cbmc.biz.order.core.domain.order.domain.EfOrderGoodsDomainService;
+ import com.cbmc.biz.order.core.domain.order.domain.model.GoodsDeductParam;
+ import com.cbmc.biz.order.core.domain.order.domain.model.GoodsRestoreParam;
+-import com.cbmc.biz.order.core.domain.redemption.dao.EfOrderRedemptionApplyGoodsDao;
+ import com.cbmc.biz.order.core.domain.redemption.dao.sdo.jooq.entities.tables.pojos.TEfOrderRedemptionApplyGoods;
+ import com.cbmc.biz.order.sdk.constants.OrderRepayStateEnum;
+ import com.cbmc.biz.order.sdk.constants.error.EfOrderError;
+@@ -47,23 +46,17 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+     @Autowired
+     private EfOrderDao efOrderDao;
+ 
+-    @Autowired
+-    private EfOrderRedemptionApplyGoodsDao efOrderRedemptionApplyGoodsDao;
+-
+     @NotNull
+     @Override
+-    public Boolean deductGoods(String pkRedemptionApply) {
+-        log.info("开始扣减订单货物剩余金额/数量，还款申请主键：{}", pkRedemptionApply);
+-        // 1. 查询货物明细
+-        List<TEfOrderRedemptionApplyGoods> applyGoodsList =
+-                efOrderRedemptionApplyGoodsDao.queryByFkRedemptionApply(pkRedemptionApply);
++    public Boolean deductGoods(List<TEfOrderRedemptionApplyGoods> applyGoodsList) {
++        log.info("开始扣减订单货物剩余金额/数量，货品明细数量：{}", applyGoodsList.size());
+ 
+         if (CollectionUtils.isEmpty(applyGoodsList)) {
+-            log.warn("未找到还款申请货品明细，无需扣减，还款申请主键：{}", pkRedemptionApply);
++            log.warn("还款申请货品明细列表为空，无需扣减");
+             return true;
+         }
+ 
+-        log.info("查询到{}条还款申请货品明细，开始批量预校验", applyGoodsList.size());
++        log.info("收到{}条还款申请货品明细，开始批量预校验", applyGoodsList.size());
+ 
+         // 2. 提取货物ID列表（过滤空值）
+         List<String> pkEfGoodsList = applyGoodsList.stream()
+@@ -73,7 +66,7 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+                 .collect(Collectors.toList());
+ 
+         if (pkEfGoodsList.isEmpty()) {
+-            log.warn("货物主键列表为空，无法扣减，还款申请主键：{}", pkRedemptionApply);
++            log.warn("货物主键列表为空，无法扣减");
+             throw new CcbscfBizException(EfOrderError.OMBE01900001, "货物主键列表为空");
+         }
+ 
+@@ -118,7 +111,7 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+                     pkEfGoods, goods.getGoodsName(), deductParams[0], deductParams[1]);
+         }
+ 
+-        log.info("订单货物扣减完成，还款申请主键：{}，成功扣减{}个货品", pkRedemptionApply, applyGoodsList.size());
++        log.info("订单货物扣减完成，成功扣减{}个货品", applyGoodsList.size());
+         return true;
+     }
+ 
+@@ -232,19 +225,15 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+ 
+     @NotNull
+     @Override
+-    public Boolean restoreGoods(String pkRedemptionApply) {
+-        log.info("开始恢复订单货物剩余金额/数量，还款申请主键：{}", pkRedemptionApply);
+-
+-        // 1. 查询货物明细
+-        List<TEfOrderRedemptionApplyGoods> applyGoodsList =
+-                efOrderRedemptionApplyGoodsDao.queryByFkRedemptionApply(pkRedemptionApply);
++    public Boolean restoreGoods(List<TEfOrderRedemptionApplyGoods> applyGoodsList) {
++        log.info("开始恢复订单货物剩余金额/数量，货品明细数量：{}", applyGoodsList.size());
+ 
+         if (CollectionUtils.isEmpty(applyGoodsList)) {
+-            log.warn("未找到还款申请货品明细，无需恢复，还款申请主键：{}", pkRedemptionApply);
++            log.warn("还款申请货品明细列表为空，无需恢复");
+             return true;
+         }
+ 
+-        log.info("查询到{}条还款申请货品明细，开始批量预校验", applyGoodsList.size());
++        log.info("收到{}条还款申请货品明细，开始批量预校验", applyGoodsList.size());
+ 
+         // 2. 提取货物ID列表（过滤空值）
+         List<String> pkEfGoodsList = applyGoodsList.stream()
+@@ -254,7 +243,7 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+                 .collect(Collectors.toList());
+ 
+         if (pkEfGoodsList.isEmpty()) {
+-            log.warn("货物主键列表为空，无法恢复，还款申请主键：{}", pkRedemptionApply);
++            log.warn("货物主键列表为空，无法恢复");
+             throw new CcbscfBizException(EfOrderError.OMBE01900001, "货物主键列表为空");
+         }
+ 
+@@ -299,7 +288,7 @@ public class EfOrderGoodsDomainServiceImpl implements EfOrderGoodsDomainService
+                     pkEfGoods, goods.getGoodsName(), restoreParams[0], restoreParams[1]);
+         }
+ 
+-        log.info("订单货物恢复完成，还款申请主键：{}，成功恢复{}个货品", pkRedemptionApply, applyGoodsList.size());
++        log.info("订单货物恢复完成，成功恢复{}个货品", applyGoodsList.size());
+         return true;
+     }
+ 

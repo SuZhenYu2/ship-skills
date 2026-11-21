@@ -1,0 +1,22 @@
+{
+  "id": "H01",
+  "kind": "historical",
+  "repo": "cbmc-biz-order",
+  "req": "7140053223",
+  "title": "恒丰e销经销商批量导入：指标推荐补充租户透传",
+  "base": "c25b56924c37adf03df834b1bbf071a36925cec4",
+  "tip": "6de7fb5549455dba0a259acb6cd7008d0d472097",
+  "branch": "feature-20261013-7140053223",
+  "gold": {
+    "files": 2,
+    "lines": 97,
+    "tests": [
+      "cbmc-biz-order-test/src/test/java/com/cbmc/biz/order/test/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategyTest.java"
+    ]
+  },
+  "fixture": "/tmp/ship-corpus/H01",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

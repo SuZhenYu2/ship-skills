@@ -1,0 +1,430 @@
+diff --git a/cbmc-biz-credit-api-op/src/main/java/com/cbmc/biz/credit/api/op/controller/price/BizCreditPriceControllerImpl.java b/cbmc-biz-credit-api-op/src/main/java/com/cbmc/biz/credit/api/op/controller/price/BizCreditPriceControllerImpl.java
+index a1e074c693..7ada65d610 100644
+--- a/cbmc-biz-credit-api-op/src/main/java/com/cbmc/biz/credit/api/op/controller/price/BizCreditPriceControllerImpl.java
++++ b/cbmc-biz-credit-api-op/src/main/java/com/cbmc/biz/credit/api/op/controller/price/BizCreditPriceControllerImpl.java
+@@ -10,6 +10,8 @@ import io.swagger.annotations.ApiOperation;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestMethod;
++import org.springframework.web.bind.annotation.RequestParam;
+ import org.springframework.web.bind.annotation.RestController;
+ 
+ /**
+@@ -41,4 +43,14 @@ public class BizCreditPriceControllerImpl extends BaseController implements Cred
+     public RestResult<CreditPriceFeeSnapshotDTO> queryPriceFeeSnapshotDetailByPk(String pkSnapshot) {
+         return creditPriceServiceClient.queryPriceFeeSnapshotDetailByPk(pkSnapshot);
+     }
++
++    /**
++     * 平台端-根据白条号查询价格明细/缴费明细详情
++     */
++    @ApiOperation("平台端-监管备案-根据白条号查询价格明细/缴费明细详情")
++    @RequestMapping(method = RequestMethod.POST, value = "/v1/credit/query/price/fee/snapshot/regulatoryFiling")
++    public RestResult<CreditPriceFeeSnapshotDTO> queryPriceFeeSnapshotDetailRegulatoryFiling(@RequestParam("fkCredit") String fkCredit) {
++        return creditPriceServiceClient.queryPriceFeeSnapshotDetailRegulatoryFiling(fkCredit);
++    }
++
+ }
+diff --git a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/controller/price/CreditPriceControllerImpl.java b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/controller/price/CreditPriceControllerImpl.java
+index d7e1ce1409..e3b55af867 100644
+--- a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/controller/price/CreditPriceControllerImpl.java
++++ b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/controller/price/CreditPriceControllerImpl.java
+@@ -70,6 +70,15 @@ public class CreditPriceControllerImpl implements CreditPriceCommonService {
+         return RestResultUtil.success(creditPriceService.queryPriceFeeSnapshotDetail(fkCredit));
+     }
+ 
++    /**
++     * 平台端-根据白条号查询价格明细/缴费明细详情
++     */
++    @ApiOperation("平台端-监管备案-根据白条号查询价格明细/缴费明细详情")
++    @RequestMapping(method = RequestMethod.POST, value = "/v1/credit/query/price/fee/snapshot/regulatoryFiling")
++    public RestResult<CreditPriceFeeSnapshotDTO> queryPriceFeeSnapshotDetailRegulatoryFiling(@RequestParam("fkCredit") String fkCredit) {
++        return RestResultUtil.success(creditPriceService.queryPriceFeeSnapshotDetailRegulatoryFiling(fkCredit));
++    }
++
+     /**
+      * 根据快照编号号查询价格明细/缴费明细
+      *
+diff --git a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/CreditPriceService.java b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/CreditPriceService.java
+index 7e244f8411..6373edb9ac 100644
+--- a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/CreditPriceService.java
++++ b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/CreditPriceService.java
+@@ -20,6 +20,8 @@ public interface CreditPriceService {
+      **/
+     CreditPriceFeeSnapshotDTO queryPriceFeeSnapshotDetail(String fkCredit);
+ 
++    CreditPriceFeeSnapshotDTO queryPriceFeeSnapshotDetailRegulatoryFiling(String fkCredit);
++
+     /**
+      * 根据快照编号查询价格明细/缴费明细
+      **/
+diff --git a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/impl/CreditPriceServiceImpl.java b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/impl/CreditPriceServiceImpl.java
+index ab075be401..a8560d371b 100644
+--- a/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/impl/CreditPriceServiceImpl.java
++++ b/cbmc-biz-credit-core/src/main/java/com/cbmc/biz/credit/core/service/price/impl/CreditPriceServiceImpl.java
+@@ -1,5 +1,8 @@
+ package com.cbmc.biz.credit.core.service.price.impl;
+ 
++import cn.hutool.core.collection.CollectionUtil;
++import cn.hutool.core.util.BooleanUtil;
++import cn.hutool.core.util.ObjectUtil;
+ import com.cbmc.biz.credit.common.utils.ReplaceCcbscf2CbmcUtils;
+ import com.cbmc.biz.credit.core.constants.CreditConstants;
+ import com.cbmc.biz.credit.core.service.price.AgreementPriceDetail;
+@@ -11,26 +14,29 @@ import com.cbmc.sdk.biz.credit.model.price.CreditPriceFeeSnapshotDetailDTO;
+ import com.ccbscf.biz.price.constants.PriceTypeEnum;
+ import com.ccbscf.biz.price.constants.ResultValueFormatTypeEnum;
+ import com.ccbscf.biz.price.constants.ResultValueTypeEnum;
++import com.ccbscf.common.util.DateUtils;
+ import com.ccbscf.common.util.PriceUtils;
+ import com.ccbscf.remote.biz.price.client.PriceSnapshotExtendService;
+ import com.ccbscf.remote.biz.price.client.PriceSnapshotService;
+ import com.ccbscf.remote.biz.price.model.AgreementPriceSnapshot;
+ import com.ccbscf.remote.biz.price.model.AmountMinValue;
+ import com.ccbscf.remote.biz.price.model.AmountValue;
++import com.ccbscf.remote.biz.price.model.Result;
++import com.ccbscf.remote.biz.price.model.TAgreementPriceSnapshotDetail;
+ import com.ccbscf.remote.biz.price.model.TPriceFeeSnapshot;
+ import com.ccbscf.remote.biz.price.model.TPriceSnapshot;
+ import com.ccbscf.remote.biz.price.model.TPriceSnapshotDetail;
+-import com.ccbscf.remote.biz.price.model.TryListPriceSnapshotsParam;
+ import com.google.common.base.Strings;
+ import com.google.common.collect.Lists;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.stereotype.Service;
+ 
+ import java.math.BigDecimal;
++import java.sql.Timestamp;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.stream.Collectors;
+ 
+ /**
+  * @description: CreditPriceServiceImpl
+@@ -50,6 +56,10 @@ public class CreditPriceServiceImpl implements CreditPriceService {
+ 
+     @Autowired
+     private BankFillBackMatch bankFillBackMatch;
++
++    @Value("${cbmc.price.platFeeAll.showDate:2026-07-10}")
++    private String platFeeAllShowDateStr;
++
+     /**
+      * 根据白条号查询价格明细/缴费明细
+      *
+@@ -60,13 +70,25 @@ public class CreditPriceServiceImpl implements CreditPriceService {
+      **/
+     @Override
+     public CreditPriceFeeSnapshotDTO queryPriceFeeSnapshotDetail(String fkCredit) {
++        return queryPriceFeeSnapshotDetailInternal(fkCredit, false);
++    }
++
++    @Override
++    public CreditPriceFeeSnapshotDTO queryPriceFeeSnapshotDetailRegulatoryFiling(String fkCredit) {
++        return queryPriceFeeSnapshotDetailInternal(fkCredit, true);
++    }
++
++    /**
++     * 内部方法：根据白条号查询价格明细/缴费明细
++     *
++     * @param fkCredit 白条号
++     * @param regulatoryFiling 是否监管备案场景
++     * @return 价格明细
++     */
++    private CreditPriceFeeSnapshotDTO queryPriceFeeSnapshotDetailInternal(String fkCredit, boolean regulatoryFiling) {
+         if (Strings.isNullOrEmpty(fkCredit)) {
+             return CreditPriceFeeSnapshotDTO.builder().build();
+         }
+-        List<TryListPriceSnapshotsParam> params = Lists.newArrayList();
+-        TryListPriceSnapshotsParam priceSnapshotsParam = new TryListPriceSnapshotsParam();
+-        priceSnapshotsParam.setPkCredit(fkCredit);
+-        params.add(priceSnapshotsParam);
+         Map<String, AgreementPriceSnapshot> priceSnapshotMap = priceSnapshotExtendService.findPriceSnapshotByPkCreditList(Lists.newArrayList(fkCredit)).tryResult();
+         if (priceSnapshotMap.isEmpty()) {
+             log.error("fkCredit {} try list price snapshot detail list is null", fkCredit);
+@@ -77,7 +99,7 @@ public class CreditPriceServiceImpl implements CreditPriceService {
+             log.error("fkCredit {} try list price snapshot detail agreementPriceSnapshot is null", fkCredit);
+             return CreditPriceFeeSnapshotDTO.builder().build();
+         }
+-        return getCreditPriceFeeSnapshotDTO(agreementPriceSnapshot);
++        return getCreditPriceFeeSnapshotDTO(agreementPriceSnapshot, regulatoryFiling);
+     }
+ 
+     /**
+@@ -90,101 +112,117 @@ public class CreditPriceServiceImpl implements CreditPriceService {
+             return CreditPriceFeeSnapshotDTO.builder().build();
+         }
+         //价格快照
+-        return getCreditPriceFeeSnapshotDTO(agreementPriceSnapshot);
++        return getCreditPriceFeeSnapshotDTO(agreementPriceSnapshot, false);
+     }
+ 
+-    private static CreditPriceFeeSnapshotDTO getCreditPriceFeeSnapshotDTO(AgreementPriceSnapshot agreementPriceSnapshot) {
++    private CreditPriceFeeSnapshotDTO getCreditPriceFeeSnapshotDTO(AgreementPriceSnapshot agreementPriceSnapshot, Boolean regulatoryFiling) {
+         //价格快照
+         TPriceSnapshot priceSnapshot = agreementPriceSnapshot.gettPriceSnapshot();
+         //价格快照是否为已放款状态
+         boolean isLoanState = PriceUtils.isLoanState(priceSnapshot.getSnapshotState());
+-        List<CreditPriceFeeSnapshotDetailDTO> priceSnapshotDetailList = agreementPriceSnapshot.gettAgreementPriceSnapshotDetails()
+-                .stream()
+-                .map(tAgreementPriceSnapshotDetail -> {
+-                    CreditPriceFeeSnapshotDetailDTO priceSnapshotDetailDTO = new CreditPriceFeeSnapshotDetailDTO();
+-                    //价格快照明细
+-                    TPriceSnapshotDetail snapshotDetail = tAgreementPriceSnapshotDetail.gettPriceSnapshotDetail();
+-                    priceSnapshotDetailDTO.setPkSnapshotDetail(snapshotDetail.getPkSnapshotDetail());
+-                    priceSnapshotDetailDTO.setPriceName(snapshotDetail.getPriceName());
+-                    // - 价格数值
+-                    ResultValueTypeEnum resultValueType =
+-                            isLoanState ? snapshotDetail.getResultValueType() : snapshotDetail.getResultValueTypeExpected();
+-                    BigDecimal sourceResultValue = isLoanState ? snapshotDetail.getResultValue() : snapshotDetail.getResultValueExpected();
+-                    if (resultValueType != null && sourceResultValue != null) {
+-                        BigDecimal resultValue = PriceUtils.scaleResultValue(resultValueType, sourceResultValue);
+-                        priceSnapshotDetailDTO.setResultValue(resultValue);
+-                        //价格收费方式 = 单笔固定金额 那个显示 /(固定金额)
+-                        priceSnapshotDetailDTO.setFormattedResultValue(resultValueType == ResultValueTypeEnum.FIX_AMOUNT ?
+-                                CreditConstants.FORMAT_FIX_AMOUNT_VIEW : PriceUtils.formatCompleteResultValue(resultValueType, resultValue, ResultValueFormatTypeEnum.BIZ));
+-                    }
++        List<CreditPriceFeeSnapshotDetailDTO> priceSnapshotDetailList = CollectionUtil.newArrayList();
++        for (TAgreementPriceSnapshotDetail tAgreementPriceSnapshotDetail : agreementPriceSnapshot.gettAgreementPriceSnapshotDetails()) {
++            CreditPriceFeeSnapshotDetailDTO priceSnapshotDetailDTO = new CreditPriceFeeSnapshotDetailDTO();
++            //价格快照明细
++            TPriceSnapshotDetail snapshotDetail = tAgreementPriceSnapshotDetail.gettPriceSnapshotDetail();
++            priceSnapshotDetailDTO.setPkSnapshotDetail(snapshotDetail.getPkSnapshotDetail());
++            priceSnapshotDetailDTO.setPriceType(snapshotDetail.getPriceType().getCode());
++            priceSnapshotDetailDTO.setPriceName(snapshotDetail.getPriceName());
++            // - 价格数值
++            ResultValueTypeEnum resultValueType =
++                    isLoanState ? snapshotDetail.getResultValueType() : snapshotDetail.getResultValueTypeExpected();
++            BigDecimal sourceResultValue = isLoanState ? snapshotDetail.getResultValue() : snapshotDetail.getResultValueExpected();
++            if (resultValueType != null && sourceResultValue != null) {
++                BigDecimal resultValue = PriceUtils.scaleResultValue(resultValueType, sourceResultValue);
++                priceSnapshotDetailDTO.setResultValue(resultValue);
++                //价格收费方式 = 单笔固定金额 那个显示 /(固定金额)
++                priceSnapshotDetailDTO.setFormattedResultValue(resultValueType == ResultValueTypeEnum.FIX_AMOUNT ?
++                        CreditConstants.FORMAT_FIX_AMOUNT_VIEW : PriceUtils.formatCompleteResultValue(resultValueType, resultValue, ResultValueFormatTypeEnum.BIZ));
++            }
+ 
+-                    // - 缴费金额
+-                    BigDecimal sourceResultAmount = isLoanState ? snapshotDetail.getResultAmount() : snapshotDetail.getResultAmountExpected();
+-                    if (sourceResultAmount != null) {
+-                        BigDecimal resultAmount = PriceUtils.scaleAmount(sourceResultAmount);
+-                        priceSnapshotDetailDTO.setResultAmount(resultAmount);
+-                        priceSnapshotDetailDTO.setFormattedResultAmount(PriceUtils.formatAmount(resultAmount));
+-                    }
++            // - 缴费金额
++            BigDecimal sourceResultAmount = isLoanState ? snapshotDetail.getResultAmount() : snapshotDetail.getResultAmountExpected();
++            if (sourceResultAmount != null) {
++                BigDecimal resultAmount = PriceUtils.scaleAmount(sourceResultAmount);
++                priceSnapshotDetailDTO.setResultAmount(resultAmount);
++                priceSnapshotDetailDTO.setFormattedResultAmount(PriceUtils.formatAmount(resultAmount));
++            }
+ 
+-                    //缴费快照
+-                    TPriceFeeSnapshot feeSnapshot = tAgreementPriceSnapshotDetail.gettPriceFeeSnapshot();
+-                    priceSnapshotDetailDTO.setIsAgreement(feeSnapshot.getIsAgreement());
+-                    // - 融资企业承担比例
+-                    if (priceSnapshotDetailDTO.getIsAgreement()) {
+-                        priceSnapshotDetailDTO.setAgreementValueCorp(feeSnapshot.getPayValue());
+-                        priceSnapshotDetailDTO.setFormattedAgreementValueCorp(PriceUtils.formatPercent(feeSnapshot.getPayValue()));
+-                    } else {
+-                        priceSnapshotDetailDTO.setAgreementValueCorp(BigDecimal.ONE);
+-                        priceSnapshotDetailDTO.setFormattedAgreementValueCorp(PriceUtils.formatPercent(BigDecimal.ONE));
+-                    }
+-                    //付费用户缴费时点类型
+-                    priceSnapshotDetailDTO.setPayTimePoint(feeSnapshot.getPayTimePoint());
+-                    if (priceSnapshotDetailDTO.getIsAgreement()) {
+-                        //协议方缴费时点
+-                        priceSnapshotDetailDTO.setAgreementPayTimePoint(feeSnapshot.getAgreementPayTimePoint());
+-                    }else{
+-                        //协议付费方企业名称 是否协议付费为”是“，取各价格项协议付费类型对应的企业名称；当是否协议付费为”否“时，该字段展示”-“。
+-                        priceSnapshotDetailDTO.setAgreementPayerCorpName("-");
+-                    }
+-                    AgreementPriceDetail interestAgreementPrice =null;
+-                    if(PriceTypeEnum.PRICE_ASSEMBLY_INTEREST==snapshotDetail.getPriceType()){
+-                        //金融机构利率
+-                        interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
+-                                , PriceUtils.IS_PRICE_INTEREST);
+-
+-                    }else if(PriceTypeEnum.PRICE_ASSEMBLY_FINANCE==snapshotDetail.getPriceType()){
+-                        //金融机构费率
+-                        interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
+-                                , PriceUtils.IS_PRICE_FINANCE);
+-
+-                    }else if(PriceTypeEnum.PRICE_ASSEMBLY_CCBSCF==snapshotDetail.getPriceType()){
+-                        interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
+-                                , PriceUtils.IS_SUB_PRICE_CCBSCF);
+-                    }else if(PriceTypeEnum.PRICE_ASSEMBLY_CORE_AGENT==snapshotDetail.getPriceType()){
+-                        //企业附加服务费
+-                        interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
+-                                , PriceUtils.IS_SUB_PRICE_CORE_AGENT);
+-                    }else if(PriceTypeEnum.PRICE_ASSEMBLY_PARTNER==snapshotDetail.getPriceType()){
+-                        //合作平台附加服务费
+-                        interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
+-                                , PriceUtils.IS_SUB_PRICE_PARTNER);
+-                    }
+-                    if(interestAgreementPrice==null){
+-                        return priceSnapshotDetailDTO;
+-                    }
+-                    if (priceSnapshotDetailDTO.getIsAgreement()) {
+-                        //协议付费方企业名称 是否协议付费为”是“，取各价格项协议付费类型对应的企业名称
+-                        priceSnapshotDetailDTO.setAgreementPayerCorpName(interestAgreementPrice.getAgreementCorpName());
++            //缴费快照
++            TPriceFeeSnapshot feeSnapshot = tAgreementPriceSnapshotDetail.gettPriceFeeSnapshot();
++            priceSnapshotDetailDTO.setIsAgreement(feeSnapshot.getIsAgreement());
++            // - 融资企业承担比例
++            if (priceSnapshotDetailDTO.getIsAgreement()) {
++                priceSnapshotDetailDTO.setAgreementValueCorp(feeSnapshot.getPayValue());
++                priceSnapshotDetailDTO.setFormattedAgreementValueCorp(PriceUtils.formatPercent(feeSnapshot.getPayValue()));
++            } else {
++                priceSnapshotDetailDTO.setAgreementValueCorp(BigDecimal.ONE);
++                priceSnapshotDetailDTO.setFormattedAgreementValueCorp(PriceUtils.formatPercent(BigDecimal.ONE));
++            }
++            //付费用户缴费时点类型
++            priceSnapshotDetailDTO.setPayTimePoint(feeSnapshot.getPayTimePoint());
++            if (priceSnapshotDetailDTO.getIsAgreement()) {
++                //协议方缴费时点
++                priceSnapshotDetailDTO.setAgreementPayTimePoint(feeSnapshot.getAgreementPayTimePoint());
++            } else {
++                //协议付费方企业名称 是否协议付费为”是“，取各价格项协议付费类型对应的企业名称；当是否协议付费为”否“时，该字段展示”-“。
++                priceSnapshotDetailDTO.setAgreementPayerCorpName("-");
++            }
++            AgreementPriceDetail interestAgreementPrice = null;
++            if (PriceTypeEnum.PRICE_ASSEMBLY_INTEREST == snapshotDetail.getPriceType()) {
++                //金融机构利率
++                interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
++                        , PriceUtils.IS_PRICE_INTEREST);
++
++            } else if (PriceTypeEnum.PRICE_ASSEMBLY_FINANCE == snapshotDetail.getPriceType()) {
++                //金融机构费率
++                interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
++                        , PriceUtils.IS_PRICE_FINANCE);
++
++            } else if (PriceTypeEnum.PRICE_ASSEMBLY_CCBSCF == snapshotDetail.getPriceType()) {
++                interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
++                        , PriceUtils.IS_SUB_PRICE_CCBSCF);
++                if (BooleanUtil.isTrue(regulatoryFiling) && isPlatFeeAllShow(priceSnapshot)) {
++                    Result result = agreementPriceSnapshot.find(PriceUtils.IS_PRICE_CCBSCF);
++                    if (result != null) {
++                        if (result.getAmountValue() != null) {
++                            priceSnapshotDetailDTO.setResultAmount(result.getAmountValue().getAmount());
++                            priceSnapshotDetailDTO.setFormattedResultAmount(PriceUtils.formatAmount(result.getAmountValue().getAmount()));
++                        }
++                        if (resultValueType != null && result.getResultValue() != null) {
++                            BigDecimal resultValue = PriceUtils.scaleResultValue(resultValueType, result.getResultValue().getResultValue());
++                            priceSnapshotDetailDTO.setResultValue(resultValue);
++                            priceSnapshotDetailDTO.setFormattedResultValue(resultValueType == ResultValueTypeEnum.FIX_AMOUNT ?
++                                    CreditConstants.FORMAT_FIX_AMOUNT_VIEW : PriceUtils.formatCompleteResultValue(resultValueType, resultValue, ResultValueFormatTypeEnum.BIZ));
++                        }
+                     }
+-                    //融资企业预计缴费金额
+-                    priceSnapshotDetailDTO.setEstimatedPaymentAmountFinancing(interestAgreementPrice.getCorpResult().getAmountValue().formatAmount());
+-                    //协议方缴费比例
+-                    priceSnapshotDetailDTO.setAgreementPayRatio(PriceUtils.formatPercent(interestAgreementPrice.getAgreementRatio()));
+-                    //协议方预计缴费金额
+-                    priceSnapshotDetailDTO.setEstimatedPaymentAmountAgreement(interestAgreementPrice.getAgreementResult().getAmountValue().formatAmount());
+-
+-                    return priceSnapshotDetailDTO;
+-                }).collect(Collectors.toList());
++                }
++
++            } else if (PriceTypeEnum.PRICE_ASSEMBLY_CORE_AGENT == snapshotDetail.getPriceType()) {
++                //企业附加服务费
++                interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
++                        , PriceUtils.IS_SUB_PRICE_CORE_AGENT);
++            } else if (PriceTypeEnum.PRICE_ASSEMBLY_PARTNER == snapshotDetail.getPriceType()) {
++                //合作平台附加服务费
++                interestAgreementPrice = new AgreementPriceDetail(agreementPriceSnapshot
++                        , PriceUtils.IS_SUB_PRICE_PARTNER);
++            }
++            if (interestAgreementPrice == null) {
++                priceSnapshotDetailList.add(priceSnapshotDetailDTO);
++                continue;
++            }
++            if (priceSnapshotDetailDTO.getIsAgreement()) {
++                //协议付费方企业名称 是否协议付费为”是“，取各价格项协议付费类型对应的企业名称
++                priceSnapshotDetailDTO.setAgreementPayerCorpName(interestAgreementPrice.getAgreementCorpName());
++            }
++            //融资企业预计缴费金额
++            priceSnapshotDetailDTO.setEstimatedPaymentAmountFinancing(interestAgreementPrice.getCorpResult().getAmountValue().formatAmount());
++            //协议方缴费比例
++            priceSnapshotDetailDTO.setAgreementPayRatio(PriceUtils.formatPercent(interestAgreementPrice.getAgreementRatio()));
++            //协议方预计缴费金额
++            priceSnapshotDetailDTO.setEstimatedPaymentAmountAgreement(interestAgreementPrice.getAgreementResult().getAmountValue().formatAmount());
++            priceSnapshotDetailList.add(priceSnapshotDetailDTO);
++        }
+         // - 平台服务费最低收费金额
+         AmountMinValue priceAmountMinValue = agreementPriceSnapshot.find(PriceUtils.IS_PRICE_CCBSCF).getAmountMinValue();
+         // 商银监管备案：平台费最低收费金额
+@@ -236,4 +274,12 @@ public class CreditPriceServiceImpl implements CreditPriceService {
+     public void backFillPrice(BackFillPriceDTO backFillPriceDTO) {
+         bankFillBackMatch.getMatchFillBackService(backFillPriceDTO.getCreditFinanceTemp().getBankCategory()).backFillPrice(backFillPriceDTO);
+     }
++
++    private boolean isPlatFeeAllShow(TPriceSnapshot priceSnapshot) {
++        Timestamp platFeeAllShowDate = DateUtils.toTimestamp(platFeeAllShowDateStr, DateUtils.PATTERN_DATE_10);
++        if (ObjectUtil.isEmpty(priceSnapshot.getLoanDate())) {
++            return false;
++        }
++        return priceSnapshot.getLoanDate().after(platFeeAllShowDate);
++    }
+ }
+diff --git a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/client/price/CreditPriceServiceClient.java b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/client/price/CreditPriceServiceClient.java
+index f73ad72643..32a463e052 100644
+--- a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/client/price/CreditPriceServiceClient.java
++++ b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/client/price/CreditPriceServiceClient.java
+@@ -1,6 +1,11 @@
+ package com.cbmc.sdk.biz.credit.client.price;
+ 
++import com.cbmc.sdk.biz.credit.model.price.CreditPriceFeeSnapshotDTO;
++import com.ccbscf.common.web.model.RestResult;
+ import org.springframework.cloud.netflix.feign.FeignClient;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestMethod;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * @description: CreditPriceServiceClient
+@@ -10,4 +15,10 @@ import org.springframework.cloud.netflix.feign.FeignClient;
+  */
+ @FeignClient("cbmc-biz-credit")
+ public interface CreditPriceServiceClient extends CreditPriceCommonService{
++    /**
++     * 监管备案-根据白条号查询价格明细/缴费明细详情
++     **/
++    @RequestMapping(method = RequestMethod.POST, value = "/v1/credit/query/price/fee/snapshot/regulatoryFiling")
++    RestResult<CreditPriceFeeSnapshotDTO> queryPriceFeeSnapshotDetailRegulatoryFiling(@RequestParam("fkCredit") String fkCredit);
++
+ }
+diff --git a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/model/price/CreditPriceFeeSnapshotDetailDTO.java b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/model/price/CreditPriceFeeSnapshotDetailDTO.java
+index 56fc740bfe..70f32ae2e1 100644
+--- a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/model/price/CreditPriceFeeSnapshotDetailDTO.java
++++ b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/model/price/CreditPriceFeeSnapshotDetailDTO.java
+@@ -1,13 +1,11 @@
+ package com.cbmc.sdk.biz.credit.model.price;
+ 
+ import com.ccbscf.biz.price.constants.PayTimePointEnum;
+-import com.ccbscf.biz.price.constants.PriceConfigTypeEnum;
+ import io.swagger.annotations.ApiModelProperty;
+ import lombok.Data;
+ 
+ import java.io.Serializable;
+ import java.math.BigDecimal;
+-import java.util.Optional;
+ 
+ /**
+  * @description: CreditPriceFeeSnapshotDetailDTO
+@@ -22,6 +20,11 @@ public class CreditPriceFeeSnapshotDetailDTO implements Serializable {
+      */
+     @ApiModelProperty(value = "价格装配编号")
+     private String pkSnapshotDetail;
++    /**
++     * 价格类型
++     */
++    @ApiModelProperty(value = "价格类型")
++    private String priceType;
+     /**
+      * 价格名称
+      */

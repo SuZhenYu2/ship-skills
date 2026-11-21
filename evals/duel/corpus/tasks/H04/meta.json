@@ -1,0 +1,20 @@
+{
+  "id": "H04",
+  "kind": "historical",
+  "repo": "cbmc-biz-estp",
+  "req": "7025379248",
+  "title": "预制单导入：统一字段长度校验并复用错误码",
+  "base": "2fec3782ff2b420c9530503df7798ac0eab36a7d",
+  "tip": "71cb1a07d6e5f9f3059aa12c9fbb10ae1823fa68",
+  "branch": "feature-20260921-7025379248",
+  "gold": {
+    "files": 2,
+    "lines": 26,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H04",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

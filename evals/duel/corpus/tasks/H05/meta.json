@@ -1,0 +1,20 @@
+{
+  "id": "H05",
+  "kind": "historical",
+  "repo": "cbmc-biz-ed",
+  "req": "7070036963",
+  "title": "e订还款及付款建议查询：增加数据隔离",
+  "base": "83350e141425404d3b48b5bff80d9c27b3ea0088",
+  "tip": "2987f66cd80dba2905b3e04e36352215fda5188f",
+  "branch": "feature-20261013-7070036963",
+  "gold": {
+    "files": 4,
+    "lines": 25,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H05",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

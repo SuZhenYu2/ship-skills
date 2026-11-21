@@ -1,0 +1,81 @@
+diff --git a/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/excel/EstpPrebillTradeImportModel.java b/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/excel/EstpPrebillTradeImportModel.java
+index c6b38362e..2e4385163 100644
+--- a/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/excel/EstpPrebillTradeImportModel.java
++++ b/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/excel/EstpPrebillTradeImportModel.java
+@@ -3,6 +3,7 @@ package com.cbmc.biz.estp.core.excel;
+ import com.alibaba.excel.annotation.ExcelProperty;
+ import io.swagger.annotations.ApiModelProperty;
+ import lombok.Data;
++import org.hibernate.validator.constraints.Length;
+ 
+ /**
+  * @description: 预制单下交易信息导入Excel模型（8列）
+@@ -25,10 +26,12 @@ public class EstpPrebillTradeImportModel {
+ 
+     @ApiModelProperty("合同编号")
+     @ExcelProperty(value = "合同编号", index = 2)
++    @Length(max = 300, message = "合同编号，最大长度300位")
+     private String contractCode;
+ 
+     @ApiModelProperty("合同名称")
+     @ExcelProperty(value = "合同名称", index = 3)
++    @Length(max = 200, message = "合同名称，最大长度200位")
+     private String contractName;
+ 
+     @ApiModelProperty("预计付款金额(元)")
+@@ -37,13 +40,16 @@ public class EstpPrebillTradeImportModel {
+ 
+     @ApiModelProperty("债权人名称")
+     @ExcelProperty(value = "债权人名称", index = 5)
++    @Length(max = 50, message = "债权人名称，最大长度50位")
+     private String corpNameSupplier;
+ 
+     @ApiModelProperty("债权人联系方式")
+     @ExcelProperty(value = "债权人联系方式", index = 6)
++    @Length(max = 18, message = "债权人联系方式最长18位")
+     private String contactSupplier;
+ 
+     @ApiModelProperty("摘要")
+     @ExcelProperty(value = "摘要", index = 7)
++    @Length(max = 100, message = "摘要最长100位")
+     private String remark;
+ }
+diff --git a/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/service/prebill/impl/EstpPrebillTradeImportServiceImpl.java b/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/service/prebill/impl/EstpPrebillTradeImportServiceImpl.java
+index cb68165c1..44f367dea 100644
+--- a/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/service/prebill/impl/EstpPrebillTradeImportServiceImpl.java
++++ b/cbmc-biz-estp-core/src/main/java/com/cbmc/biz/estp/core/service/prebill/impl/EstpPrebillTradeImportServiceImpl.java
+@@ -230,8 +230,8 @@ public class EstpPrebillTradeImportServiceImpl implements EstpPrebillTradeImport
+         // f/g. 合同编号（杭州银行）、合同名称（交通银行）必填校验
+         validateContractRequirement(bankInfo.bankCategory, row, rowNum, errors);
+ 
+-        // h. 摘要长度校验（最长100个字符）
+-        validateRemarkLength(row, rowNum, errors);
++        // h. @Length 字段长度统一校验（合同编号/合同名称/债权人名称/债权人联系方式/摘要）
++        validateFieldLengths(row, rowNum, errors);
+ 
+         return errors;
+     }
+@@ -239,9 +239,21 @@ public class EstpPrebillTradeImportServiceImpl implements EstpPrebillTradeImport
+     /**
+      * h. 校验摘要长度，最长100个字符
+      */
+-    private void validateRemarkLength(EstpPrebillTradeImportModel row, int rowNum, List<String> errors) {
++    private void validateFieldLengths(EstpPrebillTradeImportModel row, int rowNum, List<String> errors) {
++        if (StringUtils.length(row.getContractCode()) > 300) {
++            errors.add(String.format("第%d行：%s", rowNum, EstpTradeError.CONTRACT_CODE_TOO_LONG.getMessage()));
++        }
++        if (StringUtils.length(row.getContractName()) > 200) {
++            errors.add(String.format("第%d行：%s", rowNum, EstpTradeError.CONTRACT_NAME_TOO_LONG.getMessage()));
++        }
++        if (StringUtils.length(row.getCorpNameSupplier()) > 50) {
++            errors.add(String.format("第%d行：%s", rowNum, EstpTradeError.CORP_NAME_SUPPLIER_TOO_LONG.getMessage()));
++        }
++        if (StringUtils.length(row.getContactSupplier()) > 18) {
++            errors.add(String.format("第%d行：%s", rowNum, EstpTradeError.CONTACT_SUPPLIER_TOO_LONG.getMessage()));
++        }
+         if (StringUtils.length(row.getRemark()) > 100) {
+-            errors.add(String.format("第%d行：摘要长度不能超过100个字符", rowNum));
++            errors.add(String.format("第%d行：%s", rowNum, EstpTradeError.REMARK_TOO_LONG.getMessage()));
+         }
+     }
+ 

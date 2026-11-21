@@ -1,0 +1,215 @@
+diff --git a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategy.java b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategy.java
+index 567d3216..6b5ee9b3 100644
+--- a/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategy.java
++++ b/cbmc-biz-order-core/src/main/java/com/cbmc/biz/order/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategy.java
+@@ -448,6 +448,8 @@ public class HengfengDealerRosterImportStrategy implements DealerRosterImportStr
+         batchReqDTO.setCoreName(reqDTO.getCorpNameCore());
+         batchReqDTO.setBankCode(reqDTO.getBankCode().getCode());
+         batchReqDTO.setProductType(CcbscfProductTypeEnum.ORDER.getCode());
++        batchReqDTO.setZoneTenantCode(reqDTO.getZoneTenantCode());
++        batchReqDTO.setZoneTenantName(reqDTO.getZoneTenantName());
+ 
+         BaseBusiUserDTO userDTO = buildBaseBusiUserDTO(reqDTO);
+         batchReqDTO.setUserDTO(userDTO);
+diff --git a/cbmc-biz-order-test/src/test/java/com/cbmc/biz/order/test/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategyTest.java b/cbmc-biz-order-test/src/test/java/com/cbmc/biz/order/test/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategyTest.java
+index ce7710d7..aa165364 100644
+--- a/cbmc-biz-order-test/src/test/java/com/cbmc/biz/order/test/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategyTest.java
++++ b/cbmc-biz-order-test/src/test/java/com/cbmc/biz/order/test/core/app/dealerroster/strategy/HengfengDealerRosterImportStrategyTest.java
+@@ -11,6 +11,11 @@ import com.cbmc.biz.order.sdk.dealerroster.model.EfDealerMetricsImportDTO;
+ import com.cbmc.biz.order.sdk.order.model.operation.EfDataImportRespDTO;
+ import com.cbmc.biz.order.sdk.constants.MarketingStatusEnum;
+ import com.cbmc.biz.order.sdk.constants.RosterDataSourceEnum;
++import com.cbmc.mps.signup.sdk.dynamicpage.client.DynamicConfigSwitchClient;
++import com.cbmc.mps.signup.sdk.dynamicpage.model.DynamicConfigSwitchRespDTO;
++import com.cbmc.mps.signup.sdk.indexrecommend.client.IndexRecommendClient;
++import com.cbmc.mps.signup.sdk.indexrecommend.model.IndexRecommendBatchUpsertReqDTO;
++import com.cbmc.sdk.biz.finance.signup.model.evaluation.CoreIndexRecommendBatchAddOrUpdateReqDTO;
+ import com.cbmc.sdk.biz.finance.signup.service.CoreIndexRecommendService;
+ import com.ccbscf.biz.ci.constants.BankCategoryEnum;
+ import com.ccbscf.common.exception.CcbscfBizException;
+@@ -18,6 +23,7 @@ import com.ccbscf.common.util.spring.SpringContextHolder;
+ import org.junit.Before;
+ import org.junit.Test;
+ import org.junit.runner.RunWith;
++import org.mockito.ArgumentCaptor;
+ import org.mockito.InjectMocks;
+ import org.mockito.Mock;
+ import org.powermock.api.mockito.PowerMockito;
+@@ -32,6 +38,7 @@ import static org.mockito.Matchers.any;
+ import static org.mockito.Matchers.anyList;
+ import static org.mockito.Matchers.anyString;
+ import static org.mockito.Matchers.anySet;
++import static org.mockito.Mockito.verify;
+ import static org.mockito.Mockito.when;
+ import static org.mockito.Mockito.doNothing;
+ import static org.junit.Assert.*;
+@@ -55,11 +62,20 @@ public class HengfengDealerRosterImportStrategyTest {
+     @Mock
+     private SmsNoticeSender smsNoticeSender;
+ 
++    @Mock
++    private IndexRecommendClient indexRecommendClient;
++
++    @Mock
++    private DynamicConfigSwitchClient dynamicConfigSwitchClient;
++
+     @Before
+     public void setUp() {
+         // Mock SpringContextHolder静态方法
+         PowerMockito.mockStatic(SpringContextHolder.class);
+         when(SpringContextHolder.getBean(HengfengDealerRosterImportStrategy.class)).thenReturn(strategy);
++        // 默认走老链路
++        when(dynamicConfigSwitchClient.querySwitch(any()))
++                .thenReturn(RestResultUtil.success(new DynamicConfigSwitchRespDTO()));
+     }
+ 
+     // ==================== validate 方法测试 ====================
+@@ -773,14 +789,14 @@ public class HengfengDealerRosterImportStrategyTest {
+         EfDealerRosterImportReqDTO reqDTO = buildValidImportReqDTO();
+ 
+         // Mock 查询已存在经销商名单为空
+-        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), any(BankCategoryEnum.class), anySet()))
++        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), anyString(), any(BankCategoryEnum.class), anySet()))
+                 .thenReturn(new ArrayList<>());
+ 
+         // Mock 获取经销商信息
+         TEfDealerRoster extraInfo = new TEfDealerRoster();
+         extraInfo.setFkDealer("DEALER001");
+         extraInfo.setMarketingStatus(MarketingStatusEnum.REGISTERED);
+-        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString()))
++        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString(), anyString()))
+                 .thenReturn(extraInfo);
+ 
+         // Mock 批量插入
+@@ -799,6 +815,49 @@ public class HengfengDealerRosterImportStrategyTest {
+         assertEquals(1, result);
+     }
+ 
++    /**
++     * 测试processImport方法 - 老链路批量同步指标透传租户
++     */
++    @Test
++    public void processImport_OldPath_TenantPassThrough_byAI() throws Exception {
++        EfDealerRosterImportReqDTO reqDTO = buildValidImportReqDTO();
++        mockNewDealerImportDependencies();
++        when(coreIndexRecommendService.coreIndexRecommendBatchAddOrUpdate(any()))
++                .thenReturn(RestResultUtil.success(null));
++
++        strategy.processImport(reqDTO);
++
++        ArgumentCaptor<CoreIndexRecommendBatchAddOrUpdateReqDTO> captor =
++                ArgumentCaptor.forClass(CoreIndexRecommendBatchAddOrUpdateReqDTO.class);
++        verify(coreIndexRecommendService).coreIndexRecommendBatchAddOrUpdate(captor.capture());
++        assertEquals("SYZH000001", captor.getValue().getZoneTenantCode());
++        assertEquals("商银微芯", captor.getValue().getZoneTenantName());
++    }
++
++    /**
++     * 测试processImport方法 - 新链路批量同步指标透传租户
++     */
++    @Test
++    public void processImport_NewPath_TenantPassThrough_byAI() throws Exception {
++        EfDealerRosterImportReqDTO reqDTO = buildValidImportReqDTO();
++        mockNewDealerImportDependencies();
++
++        DynamicConfigSwitchRespDTO switchRespDTO = new DynamicConfigSwitchRespDTO();
++        switchRespDTO.setEnabled(true);
++        when(dynamicConfigSwitchClient.querySwitch(any()))
++                .thenReturn(RestResultUtil.success(switchRespDTO));
++        when(indexRecommendClient.batchUpsertIndexRecommend(any()))
++                .thenReturn(RestResultUtil.success(null));
++
++        strategy.processImport(reqDTO);
++
++        ArgumentCaptor<IndexRecommendBatchUpsertReqDTO> captor =
++                ArgumentCaptor.forClass(IndexRecommendBatchUpsertReqDTO.class);
++        verify(indexRecommendClient).batchUpsertIndexRecommend(captor.capture());
++        assertEquals("SYZH000001", captor.getValue().getZoneTenantCode());
++        assertEquals("商银微芯", captor.getValue().getZoneTenantName());
++    }
++
+     /**
+      * 测试processImport方法 - 全部更新经销商
+      */
+@@ -811,14 +870,14 @@ public class HengfengDealerRosterImportStrategyTest {
+         existingRoster.setPkEfRoster("ROSTER001");
+         existingRoster.setCorpNameDealer("经销商1");
+         existingRoster.setFkDealer("DEALER001");
+-        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), any(BankCategoryEnum.class), anySet()))
++        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), anyString(), any(BankCategoryEnum.class), anySet()))
+                 .thenReturn(Arrays.asList(existingRoster));
+ 
+         // Mock 获取经销商信息
+         TEfDealerRoster extraInfo = new TEfDealerRoster();
+         extraInfo.setFkDealer("DEALER001");
+         extraInfo.setMarketingStatus(MarketingStatusEnum.REGISTERED);
+-        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString()))
++        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString(), anyString()))
+                 .thenReturn(extraInfo);
+ 
+         // Mock 批量更新
+@@ -873,14 +932,14 @@ public class HengfengDealerRosterImportStrategyTest {
+         existingRoster.setPkEfRoster("ROSTER001");
+         existingRoster.setCorpNameDealer("经销商1");
+         existingRoster.setFkDealer("DEALER001");
+-        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), any(BankCategoryEnum.class), anySet()))
++        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), anyString(), any(BankCategoryEnum.class), anySet()))
+                 .thenReturn(Arrays.asList(existingRoster));
+ 
+         // Mock 获取经销商信息
+         TEfDealerRoster extraInfo = new TEfDealerRoster();
+         extraInfo.setFkDealer("DEALER001");
+         extraInfo.setMarketingStatus(MarketingStatusEnum.REGISTERED);
+-        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString()))
++        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString(), anyString()))
+                 .thenReturn(extraInfo);
+ 
+         // Mock 批量插入和更新
+@@ -909,11 +968,11 @@ public class HengfengDealerRosterImportStrategyTest {
+         EfDealerRosterImportReqDTO reqDTO = buildValidImportReqDTO();
+ 
+         // Mock 查询已存在经销商名单为空
+-        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), any(BankCategoryEnum.class), anySet()))
++        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), anyString(), any(BankCategoryEnum.class), anySet()))
+                 .thenReturn(new ArrayList<>());
+ 
+         // Mock 获取经销商信息为空
+-        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString()))
++        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString(), anyString()))
+                 .thenReturn(null);
+ 
+         strategy.processImport(reqDTO);
+@@ -932,6 +991,24 @@ public class HengfengDealerRosterImportStrategyTest {
+ 
+     // ==================== 辅助方法 ====================
+ 
++    /**
++     * 构建新建经销商导入的公共Mock
++     */
++    private void mockNewDealerImportDependencies() {
++        when(efDealerRosterDomainService.queryDealerRosterByFixedNameSet(anyString(), anyString(), any(BankCategoryEnum.class), anySet()))
++                .thenReturn(new ArrayList<>());
++
++        TEfDealerRoster extraInfo = new TEfDealerRoster();
++        extraInfo.setFkDealer("DEALER001");
++        extraInfo.setMarketingStatus(MarketingStatusEnum.REGISTERED);
++        when(efDealerRosterDomainService.getFkDealerAndMarketingStatus(anyString(), anyString()))
++                .thenReturn(extraInfo);
++
++        when(efDealerRosterDomainService.batchInsert(anyList()))
++                .thenReturn(1);
++        doNothing().when(smsNoticeSender).sendDealerRosterCreateSmsMessage(anyList());
++    }
++
+     /**
+      * 构建有效的导入请求
+      */
+@@ -943,6 +1020,8 @@ public class HengfengDealerRosterImportStrategyTest {
+         reqDTO.setDataSource(RosterDataSourceEnum.CORP_CORE);
+         reqDTO.setCurrentUserId("user001");
+         reqDTO.setCurrentUserName("用户");
++        reqDTO.setZoneTenantCode("SYZH000001");
++        reqDTO.setZoneTenantName("商银微芯");
+ 
+         List<RosterImportData> rosterDatas = new ArrayList<>();
+         RosterImportData data = new RosterImportData();

@@ -1,0 +1,20 @@
+{
+  "id": "H09",
+  "kind": "historical",
+  "repo": "cbmc-biz-order",
+  "req": "6980941058",
+  "title": "赎货申请失败时恢复剩余货物明细",
+  "base": "9c1f79465abc9a74120cce4341130c8a5256cde0",
+  "tip": "93e095554cd75039cd94f8b0777d298dfcaaeaf3",
+  "branch": "feature-20260429-6980941058",
+  "gold": {
+    "files": 5,
+    "lines": 176,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H09",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

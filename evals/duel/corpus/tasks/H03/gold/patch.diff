@@ -1,0 +1,257 @@
+diff --git a/src/main/java/com/ccbscf/api/partner/ci/controller/SaasLoginUserInfoController.java b/src/main/java/com/ccbscf/api/partner/ci/controller/SaasLoginUserInfoController.java
+new file mode 100644
+index 000000000..244b3c5ac
+--- /dev/null
++++ b/src/main/java/com/ccbscf/api/partner/ci/controller/SaasLoginUserInfoController.java
+@@ -0,0 +1,129 @@
++package com.ccbscf.api.partner.ci.controller;
++
++import com.ccbscf.api.partner.ci.model.SaasLoginUserInfoReqVO;
++import com.ccbscf.api.partner.ci.model.SaasLoginUserInfoRespVO;
++import com.ccbscf.api.partner.exception.ApiPartnerError;
++import com.ccbscf.common.exception.CcbscfBizException;
++import com.ccbscf.common.web.model.RestResult;
++import com.ccbscf.remote.biz.ci.client.SaasLoginService;
++import com.ccbscf.remote.biz.ci.model.login.SaasLoginUserInfoReqDTO;
++import com.ccbscf.remote.biz.ci.model.login.SaasLoginUserInfoResDTO;
++import io.swagger.annotations.Api;
++import io.swagger.annotations.ApiOperation;
++import org.apache.commons.lang3.StringUtils;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestMethod;
++import org.springframework.web.bind.annotation.RestController;
++
++/**
++ * 商银SaaS单点过程查询用户信息服务
++ *
++ * @author wangsu
++ * @date 2026/11/27
++ */
++@RestController
++@Api(tags = "商银SaaS单点过程查询用户信息服务")
++public class SaasLoginUserInfoController {
++
++    /**
++     * 系统异常提示
++     */
++    private static final String MSG_SYSTEM_ERROR = "系统异常";
++
++    @Autowired
++    private SaasLoginService saasLoginService;
++
++    /**
++     * 查询单点登录用户信息
++     *
++     * @param reqVO 用户信息查询请求
++     * @return 用户信息
++     */
++    @ApiOperation("查询单点登录用户信息")
++    @RequestMapping(value = "/v1/cbmc/ci/saas/login/userinfo", method = RequestMethod.POST)
++    public SaasLoginUserInfoRespVO queryUserInfo(@RequestBody(required = false) SaasLoginUserInfoReqVO reqVO) {
++        // 校验请求参数
++        checkReqParam(reqVO);
++
++        // 调用下游服务查询单点登录用户信息
++        RestResult<SaasLoginUserInfoResDTO> result = queryLoginUserInfoFromBiz(reqVO);
++
++        // 转换下游查询结果
++        return buildUserInfoResp(result);
++    }
++
++    /**
++     * 校验用户信息查询请求参数
++     *
++     * @param reqVO 用户信息查询请求
++     */
++    private void checkReqParam(SaasLoginUserInfoReqVO reqVO) {
++        // 请求参数非空校验，校验失败直接抛出业务异常
++        if (reqVO == null) {
++            throw new CcbscfBizException(ApiPartnerError.COMMON_ERROR_MSG, "请求参数不能为空");
++        }
++        if (StringUtils.isBlank(reqVO.getFkCorp())) {
++            throw new CcbscfBizException(ApiPartnerError.COMMON_ERROR_MSG, "企业编号不能为空");
++        }
++        if (StringUtils.isBlank(reqVO.getFkUser())) {
++            throw new CcbscfBizException(ApiPartnerError.COMMON_ERROR_MSG, "用户编号不能为空");
++        }
++    }
++
++    /**
++     * 调用下游服务查询单点登录用户信息
++     *
++     * @param reqVO 用户信息查询请求
++     * @return 下游查询结果
++     */
++    private RestResult<SaasLoginUserInfoResDTO> queryLoginUserInfoFromBiz(SaasLoginUserInfoReqVO reqVO) {
++        // 组装下游用户信息查询请求
++        SaasLoginUserInfoReqDTO reqDTO = new SaasLoginUserInfoReqDTO();
++        reqDTO.setZoneTenantCode(reqVO.getZoneTenantCode());
++        reqDTO.setFkCorp(reqVO.getFkCorp());
++        reqDTO.setFkUser(reqVO.getFkUser());
++
++        // 调用下游服务查询单点登录用户信息
++        RestResult<SaasLoginUserInfoResDTO> result = saasLoginService.queryLoginUserInfo(reqDTO);
++        if (result == null) {
++            throw new CcbscfBizException(ApiPartnerError.COMMON_ERROR_MSG, MSG_SYSTEM_ERROR);
++        }
++        return result;
++    }
++
++    /**
++     * 转换下游查询结果为接口响应
++     *
++     * @param result 下游查询结果
++     * @return 用户信息响应
++     */
++    private SaasLoginUserInfoRespVO buildUserInfoResp(RestResult<SaasLoginUserInfoResDTO> result) {
++        SaasLoginUserInfoRespVO respVO = new SaasLoginUserInfoRespVO();
++        respVO.createCode(result);
++
++        // 下游返回业务失败时，直接透传下游错误信息
++        if (!RestResult.RETURN_CODE_SUCCESS.equals(result.getCode())) {
++            return respVO;
++        }
++
++        // 下游返回成功但数据为空，按系统异常处理
++        if (result.getData() == null) {
++            throw new CcbscfBizException(ApiPartnerError.COMMON_ERROR_MSG, MSG_SYSTEM_ERROR);
++        }
++
++        // 转换下游用户信息为接口响应
++        SaasLoginUserInfoResDTO resDTO = result.getData();
++        respVO.setPkPerson(resDTO.getPkPerson());
++        respVO.setPersonName(resDTO.getPersonName());
++        respVO.setIdType(resDTO.getIdType());
++        respVO.setIdCode(resDTO.getIdCode());
++        respVO.setMobilePhone(resDTO.getMobilePhone());
++        respVO.setRoles(resDTO.getRoles());
++        respVO.setSoftCaAuthState(resDTO.getSoftCaAuthState());
++        respVO.setCreateTime(resDTO.getCreateTime());
++
++        return respVO;
++    }
++}
+diff --git a/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoReqVO.java b/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoReqVO.java
+new file mode 100644
+index 000000000..19d98a6d0
+--- /dev/null
++++ b/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoReqVO.java
+@@ -0,0 +1,39 @@
++package com.ccbscf.api.partner.ci.model;
++
++import com.ccbscf.api.partner.credit.model.BaseApiRequest;
++import io.swagger.annotations.ApiModel;
++import io.swagger.annotations.ApiModelProperty;
++import lombok.Data;
++import lombok.EqualsAndHashCode;
++
++/**
++ * 商银SaaS单点过程查询用户信息请求
++ *
++ * @author wangsu
++ * @date 2026/11/27
++ */
++@Data
++@EqualsAndHashCode(callSuper = false)
++@ApiModel("商银SaaS单点过程查询用户信息请求")
++public class SaasLoginUserInfoReqVO extends BaseApiRequest {
++
++    private static final long serialVersionUID = 1L;
++
++    /**
++     * 租户编码
++     */
++    @ApiModelProperty("租户编码")
++    private String zoneTenantCode;
++
++    /**
++     * 企业编号
++     */
++    @ApiModelProperty("企业编号")
++    private String fkCorp;
++
++    /**
++     * 用户编号，对应人员主键
++     */
++    @ApiModelProperty("用户编号")
++    private String fkUser;
++}
+diff --git a/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoRespVO.java b/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoRespVO.java
+new file mode 100644
+index 000000000..0ae50764a
+--- /dev/null
++++ b/src/main/java/com/ccbscf/api/partner/ci/model/SaasLoginUserInfoRespVO.java
+@@ -0,0 +1,71 @@
++package com.ccbscf.api.partner.ci.model;
++
++import com.ccbscf.api.partner.credit.model.BaseApiResponse;
++import io.swagger.annotations.ApiModel;
++import io.swagger.annotations.ApiModelProperty;
++import lombok.Data;
++import lombok.EqualsAndHashCode;
++
++import java.util.List;
++
++/**
++ * 商银SaaS单点过程查询用户信息响应
++ *
++ * @author wangsu
++ * @date 2026/11/27
++ */
++@Data
++@EqualsAndHashCode(callSuper = false)
++@ApiModel("商银SaaS单点过程查询用户信息响应")
++public class SaasLoginUserInfoRespVO extends BaseApiResponse {
++
++    private static final long serialVersionUID = 1L;
++
++    /**
++     * 人员主键
++     */
++    @ApiModelProperty("人员主键")
++    private String pkPerson;
++
++    /**
++     * 姓名
++     */
++    @ApiModelProperty("姓名")
++    private String personName;
++
++    /**
++     * 证件类型
++     */
++    @ApiModelProperty("证件类型")
++    private String idType;
++
++    /**
++     * 证件号码
++     */
++    @ApiModelProperty("证件号码")
++    private String idCode;
++
++    /**
++     * 手机号码
++     */
++    @ApiModelProperty("手机号码")
++    private String mobilePhone;
++
++    /**
++     * 所属角色码值集合
++     */
++    @ApiModelProperty("所属角色码值集合")
++    private List<String> roles;
++
++    /**
++     * 云证书授权状态：UNAUTH-未授权，AUTH-已授权
++     */
++    @ApiModelProperty("云证书授权状态：UNAUTH-未授权，AUTH-已授权")
++    private String softCaAuthState;
++
++    /**
++     * 用户创建时间
++     */
++    @ApiModelProperty("用户创建时间")
++    private String createTime;
++}

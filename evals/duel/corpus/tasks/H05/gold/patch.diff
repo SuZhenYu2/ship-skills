@@ -1,0 +1,63 @@
+diff --git a/cbmc-biz-ed-core/src/main/java/com/cbmc/biz/ed/core/service/impl/RepaymentServiceImpl.java b/cbmc-biz-ed-core/src/main/java/com/cbmc/biz/ed/core/service/impl/RepaymentServiceImpl.java
+index fe9c08efe..4515994f7 100644
+--- a/cbmc-biz-ed-core/src/main/java/com/cbmc/biz/ed/core/service/impl/RepaymentServiceImpl.java
++++ b/cbmc-biz-ed-core/src/main/java/com/cbmc/biz/ed/core/service/impl/RepaymentServiceImpl.java
+@@ -476,7 +476,7 @@ public class RepaymentServiceImpl implements RepaymentService {
+         validateQueryRequest(req);
+ 
+         // 2. 查询融资支用记录
+-        TEdRepayment repayment = repaymentDao.findByFinanceNo(req.getFinanceNo());
++        TEdRepayment repayment = repaymentDao.findByFinanceNo(req.getFinanceNo(), req.getZoneTenantCode());
+         if (repayment == null) {
+             throw new CcbscfBizException(EdRepaymentError.RPBE01600101);
+         }
+diff --git a/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/RepaymentDao.java b/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/RepaymentDao.java
+index 12fe7e9da..78ad8de18 100644
+--- a/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/RepaymentDao.java
++++ b/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/RepaymentDao.java
+@@ -223,4 +223,10 @@ public interface RepaymentDao extends JooqBaseDao<TEdRepayment, TEdRepaymentReco
+      * @return 付款建议列表
+      */
+     List<TEdPaymentProposal> listPaymentProposalByFkRepayment(String pkRepayment);
++
++    /**
++     * 根据支用编号查询还款表信息
++     * 数据隔离
++     */
++    TEdRepayment findByFinanceNo(String financeNo, String zoneTenantCode);
+ }
+diff --git a/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/impl/RepaymentDaoImpl.java b/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/impl/RepaymentDaoImpl.java
+index e4087d447..101efe68d 100644
+--- a/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/impl/RepaymentDaoImpl.java
++++ b/cbmc-biz-ed-dao/src/main/java/com/cbmc/biz/ed/core/dao/impl/RepaymentDaoImpl.java
+@@ -767,4 +767,16 @@ public class RepaymentDaoImpl extends AbstractJooqBaseDao<TEdRepayment, T_ED_REP
+                 .orderBy(tEdPaymentProposal.EXPECTED_PAYMENT_DATE.asc())
+                 .fetchInto(TEdPaymentProposal.class);
+     }
++
++    /**
++     * 根据支用编号查询还款表信息
++     * 数据隔离
++     *
++     * @param financeNo
++     * @param zoneTenantCode
++     */
++    @Override
++    public TEdRepayment findByFinanceNo(String financeNo, String zoneTenantCode) {
++        return dsl.selectFrom(table).where(table.FINANCE_NO.eq(financeNo).and(table.DELETE_TIME.isNull()).and(table.ZONE_TENANT_CODE.eq(zoneTenantCode))).fetchOneInto(TEdRepayment.class);
++    }
+ }
+diff --git a/cbmc-biz-ed-sdk/src/main/java/com/cbmc/biz/ed/sdk/model/RepaymentPaymentQueryReqDTO.java b/cbmc-biz-ed-sdk/src/main/java/com/cbmc/biz/ed/sdk/model/RepaymentPaymentQueryReqDTO.java
+index cdac676fc..a21d3d198 100644
+--- a/cbmc-biz-ed-sdk/src/main/java/com/cbmc/biz/ed/sdk/model/RepaymentPaymentQueryReqDTO.java
++++ b/cbmc-biz-ed-sdk/src/main/java/com/cbmc/biz/ed/sdk/model/RepaymentPaymentQueryReqDTO.java
+@@ -30,4 +30,9 @@ public class RepaymentPaymentQueryReqDTO implements Serializable {
+      */
+     private RepaymentPaymentQueryTypeEnum businessType;
+ 
++    /**
++     * 租户code
++     */
++    private String zoneTenantCode;
++
+ }

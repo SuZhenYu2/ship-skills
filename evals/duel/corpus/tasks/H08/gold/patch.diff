@@ -1,0 +1,54 @@
+diff --git a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepCodeConstant.java b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepCodeConstant.java
+index e25e3698b4..a0a98df277 100644
+--- a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepCodeConstant.java
++++ b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepCodeConstant.java
+@@ -148,6 +148,11 @@ public interface FileConfigUseStepCodeConstant {
+      * e信-融资-主管审核
+      */
+     String CREDIT_FINANCE_CORP_DIRECTOR = "CREDIT_FINANCE_CORP_DIRECTOR";
++    /**
++     * e信-融资-主管二次签署协议
++     */
++    String CREDIT_FINANCE_CORP_DIRECTOR_SECOND = "CREDIT_FINANCE_CORP_DIRECTOR_SECOND";
++
+     /**
+      * e收-融资-主管审核
+      */
+diff --git a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepEnum.java b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepEnum.java
+index b74f6e8abb..e07213f6ae 100644
+--- a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepEnum.java
++++ b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/FileConfigUseStepEnum.java
+@@ -270,6 +270,15 @@ public enum FileConfigUseStepEnum implements CommonEnum {
+             , FileConfigStepEnum.CREDIT_FINANCE_DIRECTOR
+             , true),
+ 
++    /**
++     * e信-融资-主管二次签署协议
++     */
++    CREDIT_FINANCE_CORP_DIRECTOR_SECOND(FileConfigUseStepCodeConstant.CREDIT_FINANCE_CORP_DIRECTOR_SECOND
++            , FileConfigProductEnum.EX
++            , FileConfigTradeEnum.FINANCE
++            , FileConfigStepEnum.CREDIT_FINANCE_DIRECTOR_SECOND
++            , true),
++
+     /**
+      * e收-融资-主管签署协议
+      */
+diff --git a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/fileconfig/FileConfigStepEnum.java b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/fileconfig/FileConfigStepEnum.java
+index 796c59c44d..0ca92bfbcf 100644
+--- a/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/fileconfig/FileConfigStepEnum.java
++++ b/cbmc-biz-sdk-credit/src/main/java/com/cbmc/sdk/biz/credit/constant/fileconfig/FileConfigStepEnum.java
+@@ -141,6 +141,13 @@ public enum FileConfigStepEnum implements CommonEnum {
+     CREDIT_FINANCE_DIRECTOR("CREDIT_FINANCE_DIRECTOR", "主管签署协议"
+             , FileConfigTradeEnum.FINANCE
+             , FileConfigUseStepCodeConstant.CREDIT_FINANCE_CORP_DIRECTOR),
++    /**
++     * e信-融资-主管二次签署协议
++     */
++    CREDIT_FINANCE_DIRECTOR_SECOND("CREDIT_FINANCE_DIRECTOR_SECOND", "主管二次签署协议"
++            , FileConfigTradeEnum.FINANCE
++            , FileConfigUseStepCodeConstant.CREDIT_FINANCE_CORP_DIRECTOR_SECOND),
++
+     /**
+      * e收-融资-主管审核（协议）（主管签署协议）
+      */

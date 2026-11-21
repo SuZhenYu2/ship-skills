@@ -1,0 +1,122 @@
+[
+  {
+    "id": "H01",
+    "repo": "cbmc-biz-order",
+    "req": "7140053223",
+    "title": "恒丰e销经销商批量导入：指标推荐补充租户透传",
+    "base": "c25b56924c37adf03df834b1bbf071a36925cec4",
+    "tip": "6de7fb5549455dba0a259acb6cd7008d0d472097",
+    "files": 2,
+    "lines": 97,
+    "test_files": 1,
+    "gold_subject": "fix(7140053223): 恒丰e销经销商批量导入指标推荐补充租户透传"
+  },
+  {
+    "id": "H02",
+    "repo": "scf-biz-product-sdk",
+    "req": "7160604038",
+    "title": "e收有追保理：新增本金比对模式配置",
+    "base": "91570a07980a2ceeebf658fae32f4632a9b7e6e2",
+    "tip": "c62060671599ee466b7f2c5a76bda63610130d08",
+    "files": 6,
+    "lines": 123,
+    "test_files": 1,
+    "gold_subject": "feat(7160604038): 支持e收有追保理配置本金比对模式"
+  },
+  {
+    "id": "H03",
+    "repo": "cbmc-api-partner",
+    "req": "7140585201",
+    "title": "SaaS 登录时查询用户信息接口",
+    "base": "01f3046537e8d11f95c15c7373afca33a16d8690",
+    "tip": "279e813a0795fcf610a0e103999b7acf1a3bf65d",
+    "files": 3,
+    "lines": 239,
+    "test_files": 0,
+    "gold_subject": "feat(7140585201):saas登录时查询用户信息接口"
+  },
+  {
+    "id": "H04",
+    "repo": "cbmc-biz-estp",
+    "req": "7025379248",
+    "title": "预制单导入：统一字段长度校验并复用错误码",
+    "base": "2fec3782ff2b420c9530503df7798ac0eab36a7d",
+    "tip": "71cb1a07d6e5f9f3059aa12c9fbb10ae1823fa68",
+    "files": 2,
+    "lines": 26,
+    "test_files": 0,
+    "gold_subject": "fix(7025379248): 统一预制单导入字段长度校验并复用错误码"
+  },
+  {
+    "id": "H05",
+    "repo": "cbmc-biz-ed",
+    "req": "7070036963",
+    "title": "e订还款及付款建议查询：增加数据隔离",
+    "base": "83350e141425404d3b48b5bff80d9c27b3ea0088",
+    "tip": "2987f66cd80dba2905b3e04e36352215fda5188f",
+    "files": 4,
+    "lines": 25,
+    "test_files": 0,
+    "gold_subject": "feat(7070036963): e订还款及付款建议数据查询（外部接口）增加数据隔离"
+  },
+  {
+    "id": "H06",
+    "repo": "cbmc-biz-credit",
+    "req": "7051635146",
+    "title": "新增监管备案价格查询接口",
+    "base": "4d972a46be78b5194504d64a5623458dfd8f41aa",
+    "tip": "047901c999ff4d4f34ae7cf8f957e59a08210ebc",
+    "files": 6,
+    "lines": 273,
+    "test_files": 0,
+    "gold_subject": "feat(7051635146): 添加监管备案价格查询接口"
+  },
+  {
+    "id": "H07",
+    "repo": "cbmc-mps-finance-route",
+    "req": "7111283404",
+    "title": "招行e收：额度来源方企业信息（融资结果查询）",
+    "base": "cce77a26de82e65255cfebbb2c3caa3328f04286",
+    "tip": "de44cac907fa2a73f8005abff3338ec32f6b1db5",
+    "files": 3,
+    "lines": 35,
+    "test_files": 0,
+    "gold_subject": "feat(7111283404): 招行e收增加额度来源方企业信息-融资结果查询"
+  },
+  {
+    "id": "H08",
+    "repo": "cbmc-biz-credit",
+    "req": "7115235022",
+    "title": "e信融资主管二次签署：协议文件配置步骤",
+    "base": "80d3c39dc6ece96eac6d87777d046364c8226f21",
+    "tip": "42391a3f5a087459760902a29794d4e07b8cadc8",
+    "files": 3,
+    "lines": 21,
+    "test_files": 0,
+    "gold_subject": "feat(7115235022): 新增e信融资主管二次签署协议文件配置步骤"
+  },
+  {
+    "id": "H09",
+    "repo": "cbmc-biz-order",
+    "req": "6980941058",
+    "title": "赎货申请失败时恢复剩余货物明细",
+    "base": "9c1f79465abc9a74120cce4341130c8a5256cde0",
+    "tip": "93e095554cd75039cd94f8b0777d298dfcaaeaf3",
+    "files": 5,
+    "lines": 176,
+    "test_files": 0,
+    "gold_subject": "fix(6980941058):赎货申请失败时，恢复剩余货物明细失败问题"
+  },
+  {
+    "id": "H10",
+    "repo": "cbmc-biz-product",
+    "req": "7110538665",
+    "title": "跨仓迁移e收息费承担方范围校验与历史数据处理",
+    "base": "110b4301532f142b6f803bee5e1f3193f0748935",
+    "tip": "d113da83c0a47fec5eca240882122e3c94f72879",
+    "files": 3,
+    "lines": 733,
+    "test_files": 1,
+    "gold_subject": "feat(7110538665): 跨仓迁移e收息费承担方范围校验与历史数据处理(需求7094921137)"
+  }
+]

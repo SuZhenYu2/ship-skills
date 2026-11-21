@@ -1,0 +1,20 @@
+{
+  "id": "H03",
+  "kind": "historical",
+  "repo": "cbmc-api-partner",
+  "req": "7140585201",
+  "title": "SaaS 登录时查询用户信息接口",
+  "base": "01f3046537e8d11f95c15c7373afca33a16d8690",
+  "tip": "279e813a0795fcf610a0e103999b7acf1a3bf65d",
+  "branch": "feature-20261106-7140585201",
+  "gold": {
+    "files": 3,
+    "lines": 239,
+    "tests": []
+  },
+  "fixture": "/tmp/ship-corpus/H03",
+  "build": {
+    "compile": "mvn -q -DskipTests compile",
+    "offline": false
+  }
+}

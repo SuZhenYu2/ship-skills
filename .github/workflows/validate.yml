@@ -18,6 +18,8 @@ jobs:
         run: bash scripts/validate-skills.sh
       - name: Test Git policy checks
         run: bash scripts/test-git-policy.sh
+      - name: Test final snapshot evidence gates
+        run: bash scripts/test-evidence.sh
       - name: Test task arena state
         run: bash scripts/test-arena-state.sh
       - name: Test task loop state
@@ -26,3 +28,5 @@ jobs:
         run: bash scripts/test-validate-skills.sh
       - name: Test eval fixtures
         run: bash evals/fixtures/test-fixtures.sh
+      - name: Test offline duel harness
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s evals/duel/tests -v

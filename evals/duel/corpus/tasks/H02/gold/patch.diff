@@ -1,0 +1,222 @@
+diff --git a/src/main/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnum.java b/src/main/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnum.java
+new file mode 100644
+index 000000000..2e7c0feb8
+--- /dev/null
++++ b/src/main/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnum.java
+@@ -0,0 +1,48 @@
++package com.cbmc.remote.biz.product.constants;
++
++import com.ccbscf.common.CommonEnum;
++
++/**
++ * 账款金额与本金比对模式。
++ */
++public enum PrincipalCompareModeEnum implements CommonEnum {
++    /**
++     * 账款金额*融资比例=融资本金
++     */
++    PRINCIPAL("PRINCIPAL", "账款金额*融资比例=融资本金"),
++
++    /**
++     * 账款金额*融资比例=融资本金+到期利息
++     */
++    PRINCIPAL_INTEREST("PRINCIPAL_INTEREST", "账款金额*融资比例=融资本金+到期利息");
++
++    private final String code;
++    private final String name;
++
++    PrincipalCompareModeEnum(String code, String name) {
++        this.code = code;
++        this.name = name;
++    }
++
++    @Override
++    public String getCode() {
++        return code;
++    }
++
++    @Override
++    public String getName() {
++        return name;
++    }
++
++    public static PrincipalCompareModeEnum valueOfCode(String code) {
++        if (code == null || code.isEmpty()) {
++            return null;
++        }
++        for (PrincipalCompareModeEnum value : values()) {
++            if (value.getCode().equals(code)) {
++                return value;
++            }
++        }
++        return null;
++    }
++}
+diff --git a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlow.java b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlow.java
+index 182f918fd..6dda052a1 100644
+--- a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlow.java
++++ b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlow.java
+@@ -721,6 +721,12 @@ public class TProductCashFlow implements Serializable {
+      */
+     private Boolean transferLayerPlatApprove;
+ 
++    /**
++     * 账款金额与本金比对模式
++     * 商银产品e收(有追保理) FACTORING_WITH_RESOURCE_ESTP 新增
++     */
++    private String principalCompareMode;
++
+     public Map<FileBizTypeEnum, Boolean> changeMapFinanceFile() {
+         if (StringUtils.isBlank(this.financeFile)) return null;
+         Map<String, Boolean> mapFinanceFile = JsonUtils.toObject(this.financeFile, Map.class);
+@@ -779,4 +785,4 @@ public class TProductCashFlow implements Serializable {
+         return list;
+     }
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowDTO.java b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowDTO.java
+index 91b105d4e..d722dd925 100644
+--- a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowDTO.java
++++ b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowDTO.java
+@@ -745,6 +745,12 @@ public class TProductCashFlowDTO {
+      */
+     private Boolean transferLayerPlatApprove;
+ 
++    /**
++     * 账款金额与本金比对模式
++     * 商银产品e收(有追保理) FACTORING_WITH_RESOURCE_ESTP 新增
++     */
++    private String principalCompareMode;
++
+     /**
+      * 获取 融资文件资料 结构化 Map（与 V1 TProductCashFlow#changeMapFinanceFile 对齐）
+      *
+diff --git a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowT.java b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowT.java
+index d79cf10e8..6be4adf2a 100644
+--- a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowT.java
++++ b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowT.java
+@@ -707,6 +707,12 @@ public class TProductCashFlowT implements Serializable {
+      */
+     private String paymentSuggestionInputProcess;
+ 
++    /**
++     * 账款金额与本金比对模式
++     * 商银产品e收(有追保理) FACTORING_WITH_RESOURCE_ESTP 新增
++     */
++    private String principalCompareMode;
++
+     public TProductCashFlowT() {}
+ 
+     public TProductCashFlowT(TProductCashFlowT value) {
+@@ -872,6 +878,7 @@ public class TProductCashFlowT implements Serializable {
+         this.creditDeductionMode = value.creditDeductionMode;
+         this.preLoanMeasureReuseDays = value.preLoanMeasureReuseDays;
+         this.paymentSuggestionInputProcess = value.paymentSuggestionInputProcess;
++        this.principalCompareMode = value.principalCompareMode;
+     }
+ 
+     public TProductCashFlowT(
+@@ -1035,7 +1042,8 @@ public class TProductCashFlowT implements Serializable {
+         String                     chargeMode,
+         String                     creditDeductionMode,
+         Integer                    preLoanMeasureReuseDays,
+-        String                     paymentSuggestionInputProcess
++        String                     paymentSuggestionInputProcess,
++        String                     principalCompareMode
+     ) {
+         this.sequenceNo = sequenceNo;
+         this.fkCore = fkCore;
+@@ -1200,6 +1208,7 @@ public class TProductCashFlowT implements Serializable {
+         this.creditDeductionMode = creditDeductionMode;
+         this.preLoanMeasureReuseDays = preLoanMeasureReuseDays;
+         this.paymentSuggestionInputProcess = paymentSuggestionInputProcess;
++        this.principalCompareMode = principalCompareMode;
+     }
+ 
+     public Boolean getCoreSubmitMaterial() {
+@@ -2484,6 +2493,14 @@ public class TProductCashFlowT implements Serializable {
+         this.paymentSuggestionInputProcess = paymentSuggestionInputProcess;
+     }
+ 
++    public String getPrincipalCompareMode() {
++        return this.principalCompareMode;
++    }
++
++    public void setPrincipalCompareMode(String principalCompareMode) {
++        this.principalCompareMode = principalCompareMode;
++    }
++
+     @Override
+     public String toString() {
+         StringBuilder sb = new StringBuilder("TProductCashFlowT (");
+@@ -2651,6 +2668,7 @@ public class TProductCashFlowT implements Serializable {
+         sb.append(", ").append(creditDeductionMode);
+         sb.append(", ").append(preLoanMeasureReuseDays);
+         sb.append(", ").append(paymentSuggestionInputProcess);
++        sb.append(", ").append(principalCompareMode);
+         sb.append(")");
+         return sb.toString();
+     }
+@@ -2711,4 +2729,4 @@ public class TProductCashFlowT implements Serializable {
+     public void setZoneTenantCode(String zoneTenantCode) {
+         this.zoneTenantCode = zoneTenantCode;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowTDTO.java b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowTDTO.java
+index 16f3a7aa1..f95ac2c88 100644
+--- a/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowTDTO.java
++++ b/src/main/java/com/ccbscf/remote/biz/product/model/TProductCashFlowTDTO.java
+@@ -699,4 +699,10 @@ public class TProductCashFlowTDTO {
+      * 是否走平台审核 0:否 1:是
+      */
+     private Boolean transferLayerPlatApprove;
++
++    /**
++     * 账款金额与本金比对模式
++     * 商银产品e收(有追保理) FACTORING_WITH_RESOURCE_ESTP 新增
++     */
++    private String principalCompareMode;
+ }
+diff --git a/src/test/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnumTest.java b/src/test/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnumTest.java
+new file mode 100644
+index 000000000..996a7e350
+--- /dev/null
++++ b/src/test/java/com/cbmc/remote/biz/product/constants/PrincipalCompareModeEnumTest.java
+@@ -0,0 +1,33 @@
++package com.cbmc.remote.biz.product.constants;
++
++import org.junit.Test;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNull;
++
++public class PrincipalCompareModeEnumTest {
++
++    @Test
++    public void valueOfCode_shouldReturnMatchingMode() {
++        assertEquals(PrincipalCompareModeEnum.PRINCIPAL,
++            PrincipalCompareModeEnum.valueOfCode("PRINCIPAL"));
++        assertEquals(PrincipalCompareModeEnum.PRINCIPAL_INTEREST,
++            PrincipalCompareModeEnum.valueOfCode("PRINCIPAL_INTEREST"));
++    }
++
++    @Test
++    public void valueOfCode_shouldReturnNullForBlankOrUnknownCode() {
++        assertNull(PrincipalCompareModeEnum.valueOfCode(null));
++        assertNull(PrincipalCompareModeEnum.valueOfCode(""));
++        assertNull(PrincipalCompareModeEnum.valueOfCode("INVALID"));
++    }
++
++    @Test
++    public void enum_shouldContainOnlyTwoBusinessModes() {
++        PrincipalCompareModeEnum[] values = PrincipalCompareModeEnum.values();
++
++        assertEquals(2, values.length);
++        assertEquals("PRINCIPAL", values[0].getCode());
++        assertEquals("PRINCIPAL_INTEREST", values[1].getCode());
++    }
++}

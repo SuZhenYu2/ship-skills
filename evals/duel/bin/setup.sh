@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 建立三个互相隔离的 Codex 运行环境（臂），并封存臂映射与预注册指纹。
+# 建立三个 Codex home 模板（臂），封存映射与内容指纹；不提供 OS 读取隔离。
 # 用法：bash evals/duel/bin/setup.sh --run-root <dir> [--dev-src <dir>] [--model <name>] [--seed <int>]
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -25,11 +25,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${RUN_ROOT}" ]] || die '必须指定 --run-root（建议放在仓库之外，例如 $TMPDIR/duel-<日期>）'
+[[ ! -e "${RUN_ROOT}" && ! -L "${RUN_ROOT}" ]] || die 'run-root 已存在，拒绝覆盖；请使用新目录'
 [[ -d "${DEV_SRC}" ]] || die "找不到对照套件源码：${DEV_SRC}"
-RUN_ROOT="$(mkdir -p "${RUN_ROOT}" && cd "${RUN_ROOT}" && pwd)"
 
 USER_CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 [[ -f "${USER_CODEX_HOME}/config.toml" ]] || die "找不到用户 codex 配置：${USER_CODEX_HOME}/config.toml"
+# mkdir 的排他性同时防止两个 setup 覆盖彼此；只允许父目录预先存在。
+mkdir -p "$(dirname "${RUN_ROOT}")"
+mkdir -m 700 "${RUN_ROOT}" || die '无法创建新的 run-root'
+RUN_ROOT="$(cd "${RUN_ROOT}" && pwd -P)"
 
 mkdir -p "${RUN_ROOT}"/{arms,runs,blind,scores,sealed}
 chmod 700 "${RUN_ROOT}/sealed" "${RUN_ROOT}/arms"
@@ -180,6 +184,9 @@ json.dump(manifest, open(root / 'sealed/manifest.json', 'w', encoding='utf-8'),
 print(json.dumps(arms, ensure_ascii=False, indent=2))
 PY
 chmod 600 "${RUN_ROOT}/sealed/manifest.json"
+
+# 仅封存将复制到每个 cell 的 config/auth/models/skills；不复制 sessions/history。
+python3 -B "${DUEL_DIR}/lib/runner.py" seal --run-root "${RUN_ROOT}"
 
 fingerprint "${DUEL_DIR}/prompts" "${DUEL_DIR}/corpus/prompts" "${DUEL_DIR}/corpus/selection.json" \
   "${DUEL_DIR}/lib/tasks.sh" "${DUEL_DIR}/rubric.md" > "${RUN_ROOT}/sealed/preregistration.sha256"

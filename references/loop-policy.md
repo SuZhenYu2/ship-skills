@@ -12,7 +12,8 @@
   ```
 
 - 缺文件时输出 `UNINITIALIZED`；状态文件损坏、字段/版本非法、符号链接越界或 Node.js 不可用均硬失败（退出码 `1`）并暂停，不得静默重置。
-- 所有写操作（`init` / `record` / `escalate` / `reset`）会原子更新 `<root>/.ship/tasks/<id>/loop.json`，并将 `/.ship/` 追加至 Git 本地 `info/exclude`（不改业务 `.gitignore`）。执行写操作前须披露该本地元数据写入；它不包含任何提交、暂存或分支修改授权。
+- 所有写操作（`init` / `record` / `escalate` / `reset`）会原子更新 `<root>/.ship/tasks/<id>/loop.json`，并维护 Git 本地 `info/exclude` 中的 `/.ship/tasks/`，将精确匹配的旧 `/.ship/` 规则迁移为该规则（不改业务 `.gitignore`）。执行写操作前须披露该本地元数据写入；它不包含任何提交、暂存或分支修改授权。
+- `ship-tdd` / `ship-fix` / `ship-verify` / `ship-review` 入口读取状态。`UNINITIALIZED` 走常规流程，不自动 init 或 record；`TRIPPED` / `ESCALATED` 暂停新一轮实现，交由 Lead 升级与用户确认重开。`CONVERGED` 只代表已记录快照；后续改码仍须重新验证，并经确认 reset 后才能记录新周期。
 
 ## 2. L1 / L2 / L3 难度定级与工具路由
 
@@ -35,11 +36,29 @@
 
 ## 3. 受控 Loop 五条铁律
 
-1. **真实证据退出**：仅当真实构建/测试退出码为 `0` 且 `ship-verify=PASS`、`ship-review=READY` 时，才允许执行 `record --outcome pass` 收敛退出（状态转为 `CONVERGED`）。
-2. **失败信号驱动**：每次 `fail` / `blocked` 必须提供规范化的 `--error-sig` 与 `--evidence` 路径；下一轮只针对上一轮失败信号收敛，禁止无差异重试。
+1. **证据一致性退出**：Lead 确认真正执行过的必需构建/测试通过、`ship-verify=PASS` 且 `ship-review=READY` 后，才可在 `ship-review` 阶段执行 `record --outcome pass --slug <slug>`。脚本复用 `check-evidence.sh --mode handoff` 检查当前 Tree、PASS/READY 与 slug；失败不更新状态，通过后才转为 `CONVERGED`。该校验会执行 `git write-tree`，仅 Lead 在既有暂存/快照授权内调用，不自动暂存代码。脚本核验记录与快照一致性，不独立证明命令真实执行，也不推断 task 与 slug 的业务关联；Lead 必须明确本次关联。
+2. **失败信号驱动**：每次 `fail` / `blocked` 必须提供非空规范化的 `--error-sig` 与指向实际非空常规文件的 `--evidence` 路径（相对路径以仓库根解析）；下一轮只针对上一轮失败信号收敛，禁止无差异重试。
 3. **双条件硬熔断（退出码 `2`）**：达到 `max_rounds` 上限，或连续 2 轮标准化 `error_hash` 相同（`stall_count >= 2`）时，`loop-state.sh record` 返回退出码 `2` 并将状态置为 `TRIPPED`。
 4. **熔断后强制升级**：状态为 `TRIPPED` 时禁止继续 `record`；必须汇总失败输出与已证伪假设，调用 `escalate --target <ship-plan|user> --reason <说明>` 升级处理。
 5. **动态升级与重开周期**：若执行中发现实际风险高于初判，或方案重定后经用户确认重新开始，必须显式执行 `reset --level <L> --mode <M> --max-rounds <N>` 刷新 `cycle` 标识；禁止在 `TRIPPED` 状态下手工改写 `loop.json` 绕过熔断。
+
+### 一轮与记录责任
+
+一轮是“一次实现/修复 → Verify → Review”的一次尝试，由 Lead 串行记录一次终态。预期的 TDD Red 和根因探索不是终态，不逐条计轮。无法继续的实现阻塞、Verify FAIL/PARTIAL 或 Review BLOCKED/INCOMPLETE 可提前结束本轮；Verify PASS 不 record，继续 Review。Review READY 且最终证据一致后才 record pass。
+
+本轮开始时固定 `cycle` 与 `round=已完成轮次+1` 并随阶段交接，record 必须原样提供 `--cycle`、`--round`。旧周期或已记账轮次会被拒绝，不得改成当前值重试；转入下一次实际修复才开始下一轮。阶段切换不递增轮次，候选不得独立 record。若部分检查失败已结束本轮，不再为同一尝试在 Review 重复记账。
+
+```bash
+bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> record \
+  --cycle <本轮cycle> --round <本轮序号> --stage ship-verify \
+  --outcome fail --error-sig <规范化错误> --evidence <失败记录路径>
+
+bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> record \
+  --cycle <本轮cycle> --round <本轮序号> --stage ship-review \
+  --outcome pass --slug <本次任务证据slug>
+```
+
+以上是互斥终态示例。脚本防止串行交接中的重复或过期记录，不提供多进程调度与并发写锁；由 Lead 保证单写者。Multi-Agent 修复轮次与此处为同一轮，预算取更严格者；Arena 空产物等重派使用自身的一次预算，不重置 Loop。
 
 ## 4. 统一回显与正交边界
 
