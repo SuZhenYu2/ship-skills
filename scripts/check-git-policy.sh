@@ -11,6 +11,7 @@ REPO_DIR="."
 MODE="range"
 BASE_REF="master"
 COMMIT_MSG=""
+VERIFY_HEAD="" VERIFY_TREE="" REVIEW_HEAD="" REVIEW_TREE=""
 
 BRANCH_REGEX='^(release-[0-9]{8}|(feature|hotfeat|hotfix)-[0-9]{8}-[a-zA-Z0-9._-]+-[a-zA-Z0-9_-]+|dev-[a-zA-Z0-9._-]+-[a-zA-Z0-9._-]+-[a-zA-Z0-9_-]+)$'
 COMMIT_REGEX='^(feat|fix|refactor|perf|test|chore|docs|style|build|ci)\([a-zA-Z0-9_-]+\): [a-zA-Z0-9._/-]+ .+$'
@@ -21,7 +22,9 @@ Usage: bash scripts/check-git-policy.sh [options]
 
 Options:
   --repo <path>         目标 Git 仓库路径（默认: 当前目录）
-  --mode <mode>         branch | commit-msg | range（默认: range，同时校验分支与基线以来所有 commit）
+  --mode <mode>         branch | commit-msg | range | handoff（默认: range）
+  --verify-head <sha> --verify-tree <sha>  handoff 模式的 PASS 快照
+  --review-head <sha> --review-tree <sha>  handoff 模式的 READY 快照
   --base <ref>          range 模式的对比基线（默认: master）
   --message <msg>       commit-msg 模式待校验的单条提交信息
   -h, --help            显示帮助
@@ -34,6 +37,10 @@ while [[ $# -gt 0 ]]; do
     --mode) MODE="${2:-range}"; shift 2 ;;
     --base) BASE_REF="${2:-master}"; shift 2 ;;
     --message) COMMIT_MSG="${2:-}"; shift 2 ;;
+    --verify-head) VERIFY_HEAD="${2:-}"; shift 2 ;;
+    --verify-tree) VERIFY_TREE="${2:-}"; shift 2 ;;
+    --review-head) REVIEW_HEAD="${2:-}"; shift 2 ;;
+    --review-tree) REVIEW_TREE="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -80,8 +87,13 @@ check_range() {
   local errs=0
   check_branch || errs=$((errs + 1))
 
-  if ! git -C "${REPO_DIR}" rev-parse --verify "${BASE_REF}" >/dev/null 2>&1; then
-    echo "[FAIL] 基线引用 '${BASE_REF}' 不存在，请通过 --base 指定正确基线。" >&2
+  local base_commit commits
+  if ! base_commit="$(git -C "${REPO_DIR}" rev-parse --verify "${BASE_REF}^{commit}")"; then
+    echo "[FAIL] 基线引用 '${BASE_REF}' 不存在或不是提交，请通过 --base 指定正确基线。" >&2
+    return 1
+  fi
+  if ! commits="$(git -C "${REPO_DIR}" log "${base_commit}..HEAD" --pretty=format:'%h%x09%s')"; then
+    echo "[FAIL] 无法枚举 ${BASE_REF}..HEAD 提交，区间校验未完成。" >&2
     return 1
   fi
 
@@ -96,16 +108,46 @@ check_range() {
     else
       echo "[PASS] ${sha} ${subject}"
     fi
-  done < <(git -C "${REPO_DIR}" log "${BASE_REF}..HEAD" --no-merges --pretty=format:'%h%x09%s')
+  done <<< "${commits}"
 
-  echo "汇总：基线 ${BASE_REF}..HEAD 共检查 ${total} 条非 merge 提交，不合规 ${bad} 条。"
+  echo "汇总：基线 ${BASE_REF}..HEAD 共检查 ${total} 条提交（含 merge），不合规 ${bad} 条。"
   if [[ "${bad}" -gt 0 || "${errs}" -gt 0 ]]; then
     return 1
   fi
   return 0
 }
 
+check_handoff() {
+  local head tree unstaged untracked
+  if ! unstaged="$(git -C "${REPO_DIR}" diff --name-only --ignore-submodules=none)" ||
+     ! untracked="$(git -C "${REPO_DIR}" ls-files --others --exclude-standard)"; then
+    echo '[FAIL] 无法检查工作区，不能确认提交范围。' >&2
+    return 1
+  fi
+  if [[ -n "${unstaged}" || -n "${untracked}" ]]; then
+    printf '[FAIL] 工作区含未暂存或未跟踪文件；请由 Lead 确认范围并重验复审。\n%s\n%s\n' "${unstaged}" "${untracked}" >&2
+    return 1
+  fi
+  if [[ -z "${REVIEW_HEAD}" || -z "${REVIEW_TREE}" || "${REVIEW_HEAD}" != "${VERIFY_HEAD}" || "${REVIEW_TREE}" != "${VERIFY_TREE}" ]]; then
+    echo '[FAIL] READY 证据缺失或不匹配 PASS 快照。' >&2
+    return 1
+  fi
+  if ! head="$(git -C "${REPO_DIR}" rev-parse --verify HEAD)" ||
+     ! tree="$(git -C "${REPO_DIR}" write-tree)"; then
+    echo '[FAIL] 无法读取待提交快照。' >&2
+    return 1
+  fi
+  if [[ "${VERIFY_HEAD}" != "${head}" || "${VERIFY_TREE}" != "${tree}" ]]; then
+    echo '[FAIL] PASS 证据缺失或不匹配当前 HEAD/index tree。' >&2
+    return 1
+  fi
+  echo '[PASS] PASS 与 READY 均匹配当前 HEAD/index tree，工作区无非忽略的未暂存输入。'
+}
+
 case "${MODE}" in
+  handoff)
+    check_handoff
+    ;;
   branch)
     check_branch
     ;;
@@ -120,7 +162,7 @@ case "${MODE}" in
     check_range
     ;;
   *)
-    echo "无效的 --mode: ${MODE}（支持 branch | commit-msg | range）" >&2
+    echo "无效的 --mode: ${MODE}（支持 branch | commit-msg | range | handoff）" >&2
     exit 2
     ;;
 esac

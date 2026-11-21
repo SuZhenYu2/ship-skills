@@ -7,6 +7,10 @@ description: 排查 Bug 或线上故障：先复现并做假设证伪定位真�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-fix`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。Arena 比较根因与证伪建议，实际修复单路进行，不能用假设代替复现证据。
+
 ## 何时使用 / 何时不用
 
 - **使用**：报错排查、线上缺陷、回归故障、测试失败修复。

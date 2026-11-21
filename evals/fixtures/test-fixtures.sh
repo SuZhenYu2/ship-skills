@@ -27,13 +27,33 @@ assert() {
 bash "${BUILD}" "${TMP_ROOT}/fx"
 FX="${TMP_ROOT}/fx"
 
-# 用例 2：上游 discount=None 陷阱必须真实复现（unittest 因 TypeError 失败）
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
+    if [[ -x "${candidate}" ]]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+NODE_BIN="$(find_node || true)"
+if [[ -z "${NODE_BIN}" ]]; then
+  echo '[ERROR] 夹具自检需要 Node.js（支持原生运行 TypeScript）。' >&2
+  exit 1
+fi
+
+# 用例 2：上游 discount=undefined 陷阱必须真实复现（node --test 因 TypeError 失败）
 CASE2="${FX}/case-2-order-refund"
-CASE2_OUT="$(cd "${CASE2}" && python3 -m unittest discover -s . -t . 2>&1 || true)"
+CASE2_OUT="$(cd "${CASE2}" && "${NODE_BIN}" --test order.test.ts 2>&1 || true)"
 if printf '%s' "${CASE2_OUT}" | grep -q 'TypeError'; then
-  pass "用例 2 夹具复现上游 None 导致的 TypeError"
+  pass "用例 2 夹具复现上游 undefined 导致的 TypeError"
 else
-  fail "用例 2 夹具复现上游 None 导致的 TypeError"
+  fail "用例 2 夹具复现上游 undefined 导致的 TypeError"
 fi
 
 # 用例 3：master 分支工作区 diff 必须含三处埋雷与无关文件改动

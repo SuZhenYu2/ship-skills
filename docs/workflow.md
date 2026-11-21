@@ -28,6 +28,19 @@
 
 - 重构前先用现有测试或补充表征测试（Characterization Tests）锁住旧行为，再分小步重构。
 
+## 任务级 Arena（可选）
+
+Arena 不是插在 plan 前的一次性步骤。用 `ship-arena` 为明确的仓库与任务执行 on/off/status；on/off 无需前置 status，会写状态并向 Git 本地 `info/exclude` 追加 `/.ship/`，不改业务 `.gitignore`，需先披露，若禁止本地元数据写入则先确认冲突。其他阶段入口按所安装 Skill 的 `references/arena-policy.md` 读取状态并保留脚本统一回显（如 `[ship-plan] Arena: ON | 范围: <id> | 计划策略: 双候选方案比选`）：
+
+```bash
+bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-plan
+```
+
+- `<id>` 仅含小写字母、数字和短横线；任务不明先问，不猜全局 active task。状态在 `.ship/tasks/<id>/arena.json`，缺文件 off，损坏或命令失败暂停且报告，不静默降级。
+- enabled=true 时按 selective 策略用两个独立候选：需求压力测试、方案、根因与证伪、测试设计、同一最终快照独立验证与审查；业务实现仍单路，导航和提交不派发竞争候选，收尾独立复核交付证据。阶段细则以共享协议为准。
+- status 只展示配置和计划策略，不代表实际执行；阶段结束另报有效候选、裁决和降级。on/off 在阶段及新派发边界生效；关闭后取消运行请求，否则忽略结果，不派发新候选。
+- 竞争候选与互斥模块协作不同；Arena 不默认启用并行业务实现。整合后对最终快照重新验证和独立审查，Git 操作仅 Lead 在用户授权范围内串行执行。
+
 ## 2. 黑板模式（`.ship/` 产物契约）
 
 为了避免长对话和跨 Agent 协作中的“传话失真”，关键决策必须落盘到 `.ship/`：

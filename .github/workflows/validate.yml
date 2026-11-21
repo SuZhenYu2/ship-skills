@@ -11,10 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Validate skill structure and installed layout
         run: bash scripts/validate-skills.sh
       - name: Test Git policy checks
         run: bash scripts/test-git-policy.sh
+      - name: Test task arena state
+        run: bash scripts/test-arena-state.sh
+      - name: Test task loop state
+        run: bash scripts/test-loop-state.sh
       - name: Test validator regressions
         run: bash scripts/test-validate-skills.sh
       - name: Test eval fixtures

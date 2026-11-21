@@ -9,6 +9,10 @@ description: 在实现前深度拷问需求与方案（Pressure-test）：消除
 
 > 对应 `dev-grill-docs` 能力。目标是**在写第一行代码之前对想法做压力测试**，把隐性假设、术语歧义和不可逆权衡暴露在设计阶段，而不是留到返工或线上事故里。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-grill`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。
+
 ## 何时使用 / 何时不用
 
 - **使用**：新需求存在关键缺口、方案有多种不可逆权衡、团队对核心业务术语/状态定义容易歧义，或需要为多 Agent 协作建立长期契约。

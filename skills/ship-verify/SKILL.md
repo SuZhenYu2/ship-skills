@@ -7,31 +7,42 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-verify`，统一回显配置与计划策略，按共享协议执行并报告实际结果；失败暂停，不静默降级 off。候选派发及结果接收前重读状态，off 后取消运行请求，否则忽略结果。同一最终快照独立验证，事实不投票；最终整合快照必须重跑真实门禁，冲突命令串行执行。
+
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md` 中的“证据优先原则”。
 - **没有真实命令输出，就不得声称通过**。任何基于“肉眼检查”或“逻辑上应该没问题”的结论都不算验证通过。
+- **证据必须绑定代码快照**：验证前记录 `HEAD`、当前 index 树与工作区状态；其中任一发生变化，旧结论立即失效，必须重新验证。
 
 ## 执行步骤
 
-1. **确定验证命令**
+1. **记录证据对象**
+   - 在运行任何验证命令前记录：`git rev-parse HEAD`、`git write-tree`（当前暂存区树）、`git status --porcelain`（判断工作区是否干净）。
+   - `git write-tree` 与 `HEAD^{tree}` 不同表示存在暂存改动；工作区不干净时，先在结论中写明本次验证的是工作区内容，还是暂存区快照。
+   - 若本次验证是为了提交，由 Lead 确认范围并按授权完成暂存；存在未暂存修改或非忽略的未跟踪文件时，不得为 index 树签发 PASS。多 Agent 模式下由 Lead 在验证前后采集快照并对照；Critic/Verifier 只在交付的快照上运行命令，不执行 `git write-tree`，补充测试需交回 Lead。
+2. **确定验证命令**
    - 按以下优先级选择命令（语言无关）：
      1. 用户在当前对话指定的命令；
      2. 项目根目录 `AGENTS.md` 中声明的编译、测试、Lint / 静态检查命令；
      3. 自动探测项目构建文件（如 `pom.xml`、`build.gradle`、`package.json`、`go.mod`、`pyproject.toml`、`Cargo.toml`、`Makefile` 等）。
-2. **执行验证并记录证据**
+3. **执行验证并记录证据**
    - 依次运行：编译/类型检查 → 受影响模块的单元测试 →（按风险或用户要求）全量测试与静态检查。
    - 若处于 Multi-Agent 模式，建议由独立上下文的 `Critic`（或 `Verifier`）执行，避免与实现线程共享隐藏状态。
-3. **处理失败与缺口**
+   - 验证过程中 `HEAD`、index 树或工作区发生变化时，必须重新记录证据对象并对最终快照重跑，不能沿用旧结论。
+4. **处理失败与缺口**
    - 任一命令失败时，直接报告失败命令、退出码与关键错误摘要，禁止静默忽略或跳过。
    - 若因环境限制（如缺少外部 DB/网络/凭据）导致部分检查无法运行，必须明确标注“未验证范围”。
    - 必需门禁未运行或未通过时，结论只能是 `PARTIAL` 或 `FAIL`；`PARTIAL` 不得被下游映射为 `PASS` 或 `READY`。
-4. **落盘验证记录**
-   - 按 `references/dev-baseline.md` 的记录契约写入 `.ship/verify/<slug>.md`（Status/Date/Base-HEAD/Diff-Hash + 命令证据表 + 未覆盖范围）。`FAIL` / `PARTIAL` 同样落盘，供 `ship-commit` 绑定提交 SHA、`ship-finish` 跨会话核验。
+5. **落盘验证记录**
+   - 按 `references/dev-baseline.md` 的记录契约写入 `.ship/verify/<slug>.md`（Status/Date/HEAD/index tree + 命令证据表 + 未覆盖范围）。`FAIL` / `PARTIAL` 同样落盘，供 `ship-commit` 绑定提交 SHA、`ship-finish` 跨会话核验。
 
 ## 输出格式（对话输出 + 落盘记录）
 
 - **验证结论**：`PASS` / `FAIL` / `PARTIAL`（附未覆盖项说明）
+- **证据对象**：`HEAD=<sha>`、`index tree=<sha>`、工作区状态（`clean` 或 `dirty: <文件列表>`）；工作区不干净时注明本次验证的是哪个快照
 - **命令证据表**：每条实际运行的命令、退出码、核心结果摘要（例如通过/失败用例数、耗时或关键日志行）。
 - **未验证门禁**：`PARTIAL` 时列出未运行的门禁、原因与补齐命令
 - **下一步建议**：全绿则进入 `ship-review`；失败则给出最直接的修复定位。

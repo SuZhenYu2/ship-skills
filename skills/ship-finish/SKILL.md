@@ -7,6 +7,10 @@ description: 验证与审查通过后的分支收尾：优先调用确定性脚�
 
 > 路径解析：本 Skill 内所有 `references/`、`docs/`、`scripts/` 路径均相对本 Skill 目录解析。
 
+## Arena 入口
+
+先读取 `references/arena-policy.md`，确认仓库根与任务 ID；不明确先询问，不猜全局 active task。执行 `bash <skill-dir>/scripts/arena-state.sh --repo <root> --task <id> status --stage ship-finish`，统一回显配置与计划策略（不是执行事实），结束时报告实际结果；失败暂停，不静默降级 off。本阶段按共享协议独立复核交付证据；所有 Git 收尾仅 Lead 串行执行，开关不授予任何 Git 写权限。
+
 ## 核心原则
 
 - 严格遵循 `references/git-branch-policy.md` 与 `references/dev-baseline.md`。
@@ -25,6 +29,7 @@ description: 验证与审查通过后的分支收尾：优先调用确定性脚�
 2. **核对验证与审查记录（仅凭仓库内文件）**
    - 对 `<base>..HEAD` 每条提交的完整 SHA（`git log --pretty=%H`），在 `.ship/verify/` 与 `.ship/review/` 中查找含 `> Commit: <sha>` 的记录，且 Status 分别为 `PASS` 与 `READY`（记录契约见 `references/dev-baseline.md`）。
    - 任一提交缺记录或 Status 不符，标记为阻断项并提醒补跑 `ship-verify` / `ship-review` 后重新绑定；不依赖对话记忆放行。
+   - 校验证据对象已随提交固化：`git rev-parse 'HEAD^{tree}'` 必须等于验证记录中的 `index tree`，且 `git status --porcelain` 干净；否则说明提交内容与已验证快照不一致，标记为阻断项。
 3. **生成 PR / 合并说明草稿**
    - 包含：关联飞书 `<req-id>`、分支与目标基线、变更摘要、验证证据与未覆盖范围、风险与回滚方案。
 4. **列出待授权收尾命令**
@@ -33,6 +38,6 @@ description: 验证与审查通过后的分支收尾：优先调用确定性脚�
 ## 输出格式（仅对话输出，不生成文件）
 
 - **收尾结论**：`READY` 或 `BLOCKED`
-- **收尾体检表**：工作区状态、分支合规性、基线同步状态、Commit 需求 ID 逐条校验结果、验证与审查状态
+- **收尾体检表**：工作区状态、分支合规性、基线同步状态、Commit 需求 ID 逐条校验结果、验证与审查状态、证据对象与 `HEAD^{tree}` 的一致性
 - **PR / 合并说明草稿**
 - **待确认动作**：需用户授权后执行的 Git 收尾命令清单
