@@ -20,7 +20,7 @@
 | `ship-commit` | 提交规范 | 调用确定性脚本校验分支与提交消息，按 `<type>(<req-id>): <scope> <subject>` 生成提交信息 | 建议消息；分别获授权后提交代码与证据 |
 | `ship-finish` | 分支收尾 | 逐条校验提交消息，按任务最终代码树核验已提交的证据，生成 PR/合并说明 | 仅对话输出 |
 
-提交前以 `check-evidence.sh --mode handoff --repo . --slug <slug>` 核对同一代码树的 PASS/READY；存在未接受的 MAJOR 必须阻断。收尾以 `check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 核对 HEAD 中的任务记录，不按提交 SHA 逐条索证。风险接受、暂存、代码提交、证据提交与收尾授权互不替代。记录格式与两阶段提交流程见[证据契约](references/dev-baseline.md)。
+提交前用 `loop-state.sh --repo . --task <id> gate --slug <slug>` 核对 Loop 收敛及同任务、同周期/轮次、同树的 PASS/READY。仅明确未启用 Loop 的任务可加 `--no-loop`。收尾用 `check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>` 核对 HEAD 中的配对证据，不依赖本地 `loop.json`。风险接受、暂存、代码提交、证据提交与收尾授权互不替代。详见[证据契约](references/dev-baseline.md)和[迁移说明](docs/onboarding.md#3-在业务项目中接入)。
 
 ## 快速开始
 
@@ -71,11 +71,16 @@ on/off 会写 `.ship/tasks/<id>/arena.json`，并把 `/.ship/tasks/` 追加到 G
 
 这是 Skill 自然语言入口，不保证 Codex 原生斜杠命令、UI 按钮或提示词硬拦截。执行细则见 [Arena 设计](docs/ship-arena-design.md)。
 
+## 任务级 Loop
+
+用 `ship-auto` 评估任务并建议 `init`，用 `loop-state.sh ... status` 只读查看；由 Lead 按[协议](references/loop-policy.md)记轮次。熔断后先 `escalate`，经确认再 `reset` 并重新取证。模式是路由建议，不表示宿主已经派发 Agent。
+
 ## 校验与校准
 
 - 确定性 Git / 飞书需求 ID 校验：`scripts/check-git-policy.sh`
 - Git 规范回归测试：`bash scripts/test-git-policy.sh`
 - Arena 开关、任务隔离与安装入口回归：`bash scripts/test-arena-state.sh`
+- Loop 熔断、证据绑定与提交门禁：`bash scripts/test-loop-state.sh`；配对证据及跨 clone 收尾：`bash scripts/test-evidence.sh`
 - 校验器回归测试（frontmatter YAML 与结构门禁）：`bash scripts/test-validate-skills.sh`
 - 10 项对抗校准用例集：`evals/calibration-cases.md`（用例 2/3/5/10 夹具：`evals/fixtures/`，记录模板：`evals/results-template.md`）
 - CI 门禁：`.github/workflows/validate.yml`（结构校验 + 安装布局 + Git 规范回归 + Arena 状态回归 + 校验器回归 + eval 夹具自检）

@@ -101,15 +101,55 @@ for skill_dir in "${REPO_ROOT}"/skills/ship-*; do
   fi
 
   case "${dir_name}" in
-    ship-verify|ship-review|ship-commit|ship-finish)
+    ship-verify|ship-review|ship-finish)
       mode=handoff
       [[ "${dir_name}" != ship-finish ]] || mode=finish
-      if ! grep -Eq 'check-evidence[.]sh --mode '"${mode}"' [^`]*--slug <slug>' "${skill_file}"; then
-        echo "[ERROR] ${dir_name} 缺少按 slug 执行的 ${mode} 证据门禁" >&2
+      if ! grep -Eq 'check-evidence[.]sh --mode '"${mode}"' [^`]*--slug <slug> --task <id>' "${skill_file}"; then
+        echo "[ERROR] ${dir_name} 缺少按任务和 slug 执行的 ${mode} 证据门禁" >&2
+        ERRORS=$((ERRORS + 1))
+      fi
+      ;;
+    ship-commit)
+      if ! grep -Eq 'loop-state[.]sh [^`]*--task <id> gate --slug <slug>' "${skill_file}"; then
+        echo "[ERROR] ${dir_name} 缺少 Loop 提交门禁" >&2
         ERRORS=$((ERRORS + 1))
       fi
       ;;
   esac
+
+  case "${dir_name}" in
+    ship-tdd|ship-fix)
+      if ! grep -Fq '模式执行契约' "${skill_file}"; then
+        echo "[ERROR] ${dir_name} 缺少模式执行契约" >&2
+        ERRORS=$((ERRORS + 1))
+      fi
+      ;;
+    ship-verify)
+      for needle in 'builder-critic' '全新上下文' '判别性测试'; do
+        if ! grep -Fq -- "${needle}" "${skill_file}"; then
+          echo "[ERROR] ${dir_name} 缺少独立 Critic 契约关键字: ${needle}" >&2
+          ERRORS=$((ERRORS + 1))
+        fi
+      done
+      ;;
+    ship-review)
+      for needle in 'multi-agent' 'Verifier' 'Auditor'; do
+        if ! grep -Fq -- "${needle}" "${skill_file}"; then
+          echo "[ERROR] ${dir_name} 缺少多 Agent 验收契约关键字: ${needle}" >&2
+          ERRORS=$((ERRORS + 1))
+        fi
+      done
+      ;;
+    ship-auto)
+      for needle in 'L2/L3 默认启用' '--no-loop'; do
+        if ! grep -Fq -- "${needle}" "${skill_file}"; then
+          echo "[ERROR] ${dir_name} 缺少 Loop 启用闭环关键字: ${needle}" >&2
+          ERRORS=$((ERRORS + 1))
+        fi
+      done
+      ;;
+  esac
+
   if grep -Eq '(忽略|排除)(整个|全部|整棵)?[[:space:]]*`?/?[.]ship/`?([[:space:]，。；]|$)|`/?[.]ship/`.{0,12}(整体忽略|整体排除|加入.{0,5}(exclude|[.]gitignore))' "${skill_file}"; then
     echo "[ERROR] ${dir_name} 含已废弃的整目录忽略规则，仅 .ship/tasks/ 保持本地" >&2
     ERRORS=$((ERRORS + 1))

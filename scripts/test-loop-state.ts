@@ -64,11 +64,12 @@ function rejectLoop(repo: string, task: string, args: string[], message?: RegExp
   assert.deepEqual(fs.readFileSync(exclude), excludeBefore);
 }
 
-function handoffFixture(repo: string, slug: string): { tree: string; records: string[] } {
+function handoffFixture(repo: string, task: string, slug = task): { tree: string; records: string[] } {
   fs.writeFileSync(path.join(repo, 'implementation.txt'), 'task implementation\n');
   // Only test fixtures are staged. No commit or signing configuration is needed.
   execFileSync('git', ['-C', repo, 'add', '--', 'implementation.txt']);
   const tree = execFileSync('git', ['-C', repo, 'write-tree'], { encoding: 'utf8' }).trim();
+  const loop = fs.existsSync(statePath(repo, task)) ? readState(repo, task) : null;
   const records = ['verify', 'review'].map((kind, index) => {
     const relative = `.ship/${kind}/${slug}.md`;
     fs.mkdirSync(path.dirname(path.join(repo, relative)), { recursive: true });
@@ -78,6 +79,9 @@ function handoffFixture(repo: string, slug: string): { tree: string; records: st
       `> Tree: ${tree}`,
       '> Commit: pending',
       `> Slug: ${slug}`,
+      `> Task: ${task}`,
+      `> Cycle: ${loop?.cycle ?? 'none'}`,
+      `> Round: ${loop ? loop.round + 1 : 'none'}`,
       '> Scope: task-final fixture; metadata does not attest command execution',
       '',
     ].join('\n'));
@@ -97,7 +101,23 @@ describe('loop-state.ts', () => {
     const out = runLoop(repo, ['--task', 'order-cancel', 'status', '--stage', 'ship-auto']);
     assert.match(out, /UNINITIALIZED/);
     assert.match(out, /\[ship-auto\]/);
+    assert.doesNotMatch(out, /mode-contract/);
     assert.equal(fs.existsSync(path.join(repo, '.ship')), false);
+  });
+
+  it('status echoes the execution contract for each mode', () => {
+    const contracts = [
+      ['single', /不派发子 Agent/],
+      ['builder-critic', /全新上下文.*判别性测试/],
+      ['multi-agent', /Verifier.*Auditor/],
+    ] as const;
+    for (const [mode, contract] of contracts) {
+      const task = `contract-${mode}`;
+      runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', mode]);
+      const out = runLoop(repo, ['--task', task, 'status', '--stage', 'ship-verify']);
+      assert.match(out, new RegExp(`mode-contract: ${mode}`));
+      assert.match(out, contract);
+    }
   });
 
   it('AC5 keeps the existing tasks rule and user entries when migrating on write', () => {
@@ -231,7 +251,7 @@ describe('loop-state.ts', () => {
     runLoop(repo, ['--task', 'ok-task', 'init', '--level', 'L1', '--mode', 'single', '--max-rounds', '2']);
     runLoop(repo, ['--task', 'other-task', 'init', '--level', 'L2', '--mode', 'builder-critic']);
     const otherBefore = fs.readFileSync(statePath(repo, 'other-task'));
-    const { tree, records } = handoffFixture(repo, 'release-candidate');
+    const { tree, records } = handoffFixture(repo, 'ok-task', 'release-candidate');
     const indexBefore = execFileSync('git', ['-C', repo, 'ls-files', '--stage']);
     const out = runLoop(repo, passArgs(repo, 'ok-task', 'release-candidate'));
     assert.match(out, /CONVERGED/);
@@ -349,6 +369,100 @@ describe('loop-state.ts', () => {
     const newState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     assert.notEqual(newState.cycle, oldCycle);
     assert.deepEqual(newState.history, []);
+  });
+
+  it('direct reset cannot bypass escalation after a trip', () => {
+    const task = 'tripped-reset';
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic', '--max-rounds', '1']);
+    runLoop(repo, ['--task', task, 'record', '--stage', 'ship-verify', '--outcome', 'fail', '--error-sig', 'boom',
+      ...recordTokens(repo, task), ...failureEvidence(repo, task)], 2);
+    rejectLoop(repo, task, ['--task', task, 'reset', '--level', 'L3', '--mode', 'multi-agent'], /TRIPPED.*escalate/);
+  });
+
+  it('commit gate blocks active, tripped and escalated attempts despite matching records', () => {
+    const task = 'gate-blocked';
+    const gate = ['--task', task, 'gate', '--slug', task];
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic', '--max-rounds', '1']);
+    handoffFixture(repo, task);
+    rejectLoop(repo, task, gate, /ACTIVE/);
+    rejectLoop(repo, task, [...gate, '--no-loop', '--allow-legacy'], /已启用/);
+    runLoop(repo, ['--task', task, 'record', '--stage', 'ship-verify', '--outcome', 'fail', '--error-sig', 'boom',
+      ...recordTokens(repo, task), ...failureEvidence(repo, task)], 2);
+    rejectLoop(repo, task, gate, /TRIPPED/);
+    runLoop(repo, ['--task', task, 'escalate', '--target', 'user', '--reason', 'needs decision']);
+    rejectLoop(repo, task, gate, /ESCALATED/);
+  });
+
+  it('commit gate requires an explicit no-loop decision for an uninitialized task', () => {
+    const task = 'uninitialized-gate';
+    const gate = ['--task', task, 'gate', '--slug', task];
+    handoffFixture(repo, task);
+    rejectLoop(repo, task, gate, /UNINITIALIZED/);
+    assert.match(runLoop(repo, [...gate, '--no-loop']), /PASS gate/);
+    assert.equal(fs.existsSync(statePath(repo, task)), false);
+  });
+
+  it('commit gate rejects Loop evidence after local state is lost', () => {
+    const task = 'lost-state';
+    const gate = ['--task', task, 'gate', '--slug', task];
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    handoffFixture(repo, task);
+    runLoop(repo, passArgs(repo, task, task));
+    fs.unlinkSync(statePath(repo, task));
+    rejectLoop(repo, task, gate, /UNINITIALIZED/);
+    rejectLoop(repo, task, [...gate, '--no-loop', '--allow-legacy'], /BLOCKED:.*Cycle/);
+  });
+
+  it('commit gate only accepts the slug and tree actually recorded as converged', () => {
+    const task = 'gate-ready';
+    const gate = ['--task', task, 'gate', '--slug', task];
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    const { tree, records } = handoffFixture(repo, task);
+    runLoop(repo, passArgs(repo, task, task));
+    const stateBefore = fs.readFileSync(statePath(repo, task));
+    assert.match(runLoop(repo, gate), new RegExp(`PASS gate .*tree=${tree}`));
+    assert.deepEqual(fs.readFileSync(statePath(repo, task)), stateBefore);
+    rejectLoop(repo, task, ['--task', task, 'gate', '--slug', 'different-slug'], /slug/);
+
+    fs.writeFileSync(path.join(repo, 'implementation.txt'), 'updated task implementation\n');
+    execFileSync('git', ['-C', repo, 'add', '--', 'implementation.txt']);
+    const changedTree = execFileSync('git', ['-C', repo, 'write-tree'], { encoding: 'utf8' }).trim();
+    for (const relative of records) {
+      const record = path.join(repo, relative);
+      fs.writeFileSync(record, fs.readFileSync(record, 'utf8').replace(tree, changedTree));
+    }
+    rejectLoop(repo, task, gate, /收敛.*Tree/);
+  });
+
+  it('commit gate fails when the staged tree changes after convergence', () => {
+    const task = 'gate-drift';
+    const gate = ['--task', task, 'gate', '--slug', task];
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    const { tree } = handoffFixture(repo, task);
+    runLoop(repo, passArgs(repo, task, task));
+    assert.match(runLoop(repo, gate), new RegExp(`PASS gate .*tree=${tree}`));
+    fs.writeFileSync(path.join(repo, 'extra.txt'), 'staged after gate\n');
+    execFileSync('git', ['-C', repo, 'add', '--', 'extra.txt']);
+    rejectLoop(repo, task, gate, /Tree/);
+  });
+
+  it('contradictory loop state is rejected before status or gate trusts it', () => {
+    const task = 'bad-state';
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic', '--max-rounds', '2']);
+    const base = readState(repo, task);
+    const entry = (round: number, outcome: string) => ({
+      round, stage: 'ship-review', outcome, error_hash: '', evidence: 'e.md', slug: task, tree: 'a'.repeat(40),
+    });
+    const cases = [
+      { ...base, status: 'CONVERGED', round: 2, max_rounds: 1, history: [entry(2, 'pass')] },
+      { ...base, status: 'CONVERGED', round: 2, max_rounds: 2, history: [entry(1, 'pass'), entry(2, 'fail')] },
+      { ...base, status: 'ACTIVE', round: 1, history: [entry(1, 'pass')] },
+    ];
+    for (const contradictory of cases) {
+      fs.writeFileSync(statePath(repo, task), JSON.stringify(contradictory), 'utf8');
+      runLoop(repo, ['--task', task, 'status'], 1);
+      runLoop(repo, ['--task', task, 'gate', '--slug', task], 1);
+    }
   });
 
   it('uninitialized mutations are rejected without creating state or changing excludes', () => {
@@ -524,8 +638,30 @@ describe('loop-state.ts', () => {
         ...(outcome === 'pass' ? ['--slug', task] : ['--error-sig', 'failure', ...evidence])],
       /cycle\/round 已过期或不匹配/);
     }
+    rejectLoop(repo, task, passArgs(repo, task, task), /BLOCKED:.*Cycle/);
+    handoffFixture(repo, task);
     runLoop(repo, passArgs(repo, task, task));
     assert.equal(readState(repo, task).round, 1);
+  });
+
+  it('record pass rejects same-tree evidence for a different task', () => {
+    const task = 'expected-task';
+    const other = 'other-task';
+    const slug = 'shared-slug';
+    for (const id of [task, other]) {
+      runLoop(repo, ['--task', id, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    }
+    handoffFixture(repo, other, slug);
+    rejectLoop(repo, task, passArgs(repo, task, slug), /BLOCKED:.*Task/);
+  });
+
+  it('record pass rejects same-cycle evidence for another round', () => {
+    const task = 'expected-round';
+    runLoop(repo, ['--task', task, 'init', '--level', 'L2', '--mode', 'builder-critic']);
+    handoffFixture(repo, task);
+    runLoop(repo, ['--task', task, 'record', '--stage', 'ship-verify', '--outcome', 'fail', '--error-sig', 'boom',
+      ...recordTokens(repo, task), ...failureEvidence(repo, task)]);
+    rejectLoop(repo, task, passArgs(repo, task, task), /BLOCKED:.*Round/);
   });
 
   it('slug cycle and round are record-only and escalation targets are restricted', () => {

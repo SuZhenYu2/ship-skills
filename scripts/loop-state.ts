@@ -20,15 +20,21 @@ const STAGES = new Set([
 
 const LEVELS = new Set(['L1', 'L2', 'L3'] as const);
 const MODES = new Set(['single', 'builder-critic', 'multi-agent'] as const);
+const MODE_CONTRACTS: Record<Mode, string> = {
+  single: '单 Agent 完成实现与验证；不派发子 Agent；验证须真实运行命令并保留原始输出',
+  'builder-critic': '实现与验收分离；Critic 必须使用全新上下文，至少执行一个判别性测试并附原始输出',
+  'multi-agent': 'Scout 只读摸底；契约冻结后按互斥白名单派发 Builder；Verifier 与 Auditor 独立验收',
+};
 const STATUSES = new Set(['ACTIVE', 'CONVERGED', 'TRIPPED', 'ESCALATED'] as const);
 const OUTCOMES = new Set(['pass', 'fail', 'blocked'] as const);
-const ACTIONS = new Set(['init', 'status', 'record', 'escalate', 'reset'] as const);
+const ACTIONS = new Set(['init', 'status', 'record', 'escalate', 'reset', 'gate'] as const);
+const SLUG = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 type Level = 'L1' | 'L2' | 'L3';
 type Mode = 'single' | 'builder-critic' | 'multi-agent';
 type LoopStatus = 'ACTIVE' | 'CONVERGED' | 'TRIPPED' | 'ESCALATED';
 type Outcome = 'pass' | 'fail' | 'blocked';
-type Action = 'init' | 'status' | 'record' | 'escalate' | 'reset';
+type Action = 'init' | 'status' | 'record' | 'escalate' | 'reset' | 'gate';
 
 interface HistoryEntry {
   round: number;
@@ -78,6 +84,8 @@ interface ParsedArgs {
   target?: string;
   reason?: string;
   action?: Action;
+  noLoop?: boolean;
+  allowLegacy?: boolean;
 }
 
 function fail(message: string, code = 1): never {
@@ -109,12 +117,20 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     const token = argv[i];
     if (token === '-h' || token === '--help') {
       process.stdout.write(
-        'Usage: loop-state.sh --repo <root> --task <id> [--stage <stage>] <init|status|record|escalate|reset> [options]\n' +
+        'Usage: loop-state.sh --repo <root> --task <id> [--stage <stage>] <init|status|record|escalate|reset|gate> [options]\n' +
         'record: --stage <stage> --outcome pass|fail|blocked --cycle <current> --round <next>\n' +
         '  pass: ship-review only, --slug <slug>; fail/blocked: --error-sig <text> --evidence <file>\n' +
+        'gate: --slug <slug> [--no-loop [--allow-legacy]]; requires a converged attempt or explicit no-loop evidence.\n' +
         'Lead must serialize writes; ship-verify PASS continues to ship-review, not convergence.\n',
       );
       process.exit(0);
+    }
+    if (token === '--no-loop' || token === '--allow-legacy') {
+      const key = token === '--no-loop' ? 'noLoop' : 'allowLegacy';
+      if (parsed[key]) fail(`参数重复：${token}`);
+      parsed[key] = true;
+      i += 1;
+      continue;
     }
     if (valueFlags.has(token)) {
       if (i + 1 >= argv.length) {
@@ -182,14 +198,14 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       fail(`多余的位置参数：${token}`);
     }
     if (!ACTIONS.has(token as Action)) {
-      fail(`未知操作：${token}（仅支持 init | status | record | escalate | reset）`);
+      fail(`未知操作：${token}（仅支持 init | status | record | escalate | reset | gate）`);
     }
     parsed.action = token as Action;
     i += 1;
   }
 
   if (!parsed.action) {
-    fail('必须指定操作：init | status | record | escalate | reset。');
+    fail('必须指定操作：init | status | record | escalate | reset | gate。');
   }
   if (parsed.task === undefined) {
     fail('必须提供 --task 参数。');
@@ -211,21 +227,47 @@ function runGit(repo: string, args: string[]): string {
   }).trim();
 }
 
-function checkPassEvidence(repo: string, slug: string): Pick<HistoryEntry, 'evidence' | 'slug' | 'tree'> {
-  // Delegate snapshot/record checks without staging or committing on the caller's behalf.
+function checkHandoff(repo: string, task: string, slug: string, context: string[]): string {
   const output = execFileSync('bash', [
     path.join(import.meta.dirname, 'check-evidence.sh'),
-    '--mode', 'handoff', '--repo', repo, '--slug', slug,
+    '--mode', 'handoff', '--repo', repo, '--slug', slug, '--task', task, ...context,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const match = /^PASS handoff slug=(\S+) tree=([0-9a-f]+)$/.exec(output);
   if (!match || match[1] !== slug || ![40, 64].includes(match[2].length)) {
     fail('check-evidence.sh 未返回可识别的 handoff 快照引用。');
   }
+  return match[2];
+}
+
+function checkPassEvidence(repo: string, task: string, slug: string, cycle: string, round: number): Pick<HistoryEntry, 'evidence' | 'slug' | 'tree'> {
   return {
     evidence: `.ship/verify/${slug}.md; .ship/review/${slug}.md`,
     slug,
-    tree: match[2],
+    tree: checkHandoff(repo, task, slug, ['--cycle', cycle, '--round', String(round)]),
   };
+}
+
+function checkCommitGate(repo: string, task: string, slug: string, state: LoopState | null, args: ParsedArgs): void {
+  if (state === null) {
+    if (!args.noLoop) fail('Loop: UNINITIALIZED；状态缺失不代表未启用。恢复任务状态，或确认未启用后传 --no-loop。');
+    const tree = checkHandoff(repo, task, slug, ['--no-loop', ...(args.allowLegacy ? ['--allow-legacy'] : [])]);
+    process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${tree} loop=none\n`);
+    return;
+  }
+  if (args.noLoop) fail('任务已启用 Loop，不能使用 --no-loop 或旧证据兼容。');
+  if (state.status !== 'CONVERGED') {
+    const next = state.status === 'ACTIVE' ? '先完成验证与审查并记录 pass。'
+      : state.status === 'TRIPPED' ? '先 escalate，再经确认 reset 并重验。' : '经确认 reset 后重新验证与审查。';
+    fail(`Loop: ${state.status}；禁止提交代码。${next}`);
+  }
+  const result = state.history.at(-1);
+  if (result?.stage !== 'ship-review' || result.outcome !== 'pass' || result.round !== state.round || !result.tree) {
+    fail('Loop 已标为 CONVERGED，但缺少有效收敛证据；重新验证与审查。');
+  }
+  if (result.slug !== slug) fail('提交 slug 与本轮收敛证据不一致。');
+  const tree = checkHandoff(repo, task, slug, ['--cycle', state.cycle, '--round', String(state.round)]);
+  if (result.tree !== tree) fail('暂存区 Tree 与收敛时的 Tree 不一致；重开周期后重新验证与审查。');
+  process.stdout.write(`PASS gate task=${task} slug=${slug} tree=${tree} cycle=${state.cycle} round=${state.round}\n`);
 }
 
 function checkFailureEvidence(repo: string, evidence: string): string {
@@ -349,6 +391,50 @@ function validateState(raw: unknown, expectedTask: string): LoopState {
   if (!Array.isArray(obj.history)) {
     fail('loop history 字段无效。');
   }
+  const history = obj.history as unknown[];
+  for (const [index, entry] of history.entries()) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      fail('loop history 条目格式无效；请修复后重试，不会静默覆盖。');
+    }
+    const item = entry as Record<string, unknown>;
+    if (!Number.isInteger(item.round) || (item.round as number) !== index + 1) {
+      fail('loop history 轮次必须从 1 连续递增；请修复后重试，不会静默覆盖。');
+    }
+    if (
+      typeof item.stage !== 'string' ||
+      !STAGES.has(item.stage) ||
+      typeof item.outcome !== 'string' ||
+      !OUTCOMES.has(item.outcome as Outcome) ||
+      typeof item.error_hash !== 'string' ||
+      typeof item.evidence !== 'string'
+    ) {
+      fail('loop history 条目字段无效；请修复后重试，不会静默覆盖。');
+    }
+    if (item.slug !== undefined && typeof item.slug !== 'string') {
+      fail('loop history slug 字段无效。');
+    }
+    if (
+      item.tree !== undefined &&
+      (typeof item.tree !== 'string' || !/^[0-9a-f]{40,64}$/.test(item.tree))
+    ) {
+      fail('loop history tree 字段无效。');
+    }
+  }
+  const round = obj.round as number;
+  const maxRounds = obj.max_rounds as number;
+  if (round !== history.length) {
+    fail('loop round 必须等于已记录轮数；请修复后重试，不会静默覆盖。');
+  }
+  if (round > maxRounds) {
+    fail('loop round 已超出 max_rounds；请修复后重试，不会静默覆盖。');
+  }
+  const lastOutcome = (history.at(-1) as Record<string, unknown> | undefined)?.outcome;
+  if (obj.status === 'CONVERGED' && lastOutcome !== 'pass') {
+    fail('loop 标记为 CONVERGED，但最近一轮不是 pass；请修复后重试。');
+  }
+  if (obj.status !== 'CONVERGED' && lastOutcome === 'pass') {
+    fail(`loop 最近一轮已 pass，但状态为 ${obj.status}；请修复后重试。`);
+  }
   return obj as unknown as LoopState;
 }
 
@@ -364,6 +450,7 @@ function printBanner(stageLabel: string, taskId: string, state: LoopState | null
     `[${stageLabel}] Loop: ${state.status} | 范围: ${taskId} | 难度: ${state.level} | 模式: ${state.mode} | 轮次: ${state.round}/${state.max_rounds}\n`,
   );
   process.stdout.write(`cycle=${state.cycle}\n`);
+  process.stdout.write(`mode-contract: ${state.mode} | ${MODE_CONTRACTS[state.mode]}\n`);
 }
 
 function main(): void {
@@ -390,8 +477,14 @@ function main(): void {
     fail('--max-rounds 必须在 1 到 5 之间。');
   }
 
-  if (action !== 'record' && (args.slug !== undefined || args.cycle !== undefined || args.round !== undefined)) {
-    fail('--slug、--cycle 与 --round 仅用于 record。');
+  if (action !== 'record' && (args.cycle !== undefined || args.round !== undefined)) {
+    fail('--cycle 与 --round 仅用于 record。');
+  }
+  if (action !== 'record' && action !== 'gate' && args.slug !== undefined) {
+    fail('--slug 仅用于 record 或 gate。');
+  }
+  if (action !== 'gate' && (args.noLoop || args.allowLegacy)) {
+    fail('--no-loop 与 --allow-legacy 仅用于 gate。');
   }
 
   if (action === 'init' || action === 'reset') {
@@ -431,7 +524,7 @@ function main(): void {
       if (args.stage !== 'ship-review') {
         fail('仅 ship-review 可记录 pass；ship-verify PASS 应继续 ship-review，不记录任务收敛。');
       }
-      if (!args.slug || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(args.slug)) {
+      if (!args.slug || !SLUG.test(args.slug)) {
         fail('pass 必须提供有效的 --slug，以检查 verify/review handoff 证据。');
       }
       if (args.errorSig !== undefined || args.evidence !== undefined) {
@@ -453,6 +546,14 @@ function main(): void {
       args.reason !== undefined
     ) {
       fail('record 不接受 init/reset/escalate 专属参数。');
+    }
+  } else if (action === 'gate') {
+    if (!args.slug || !SLUG.test(args.slug)) fail('gate 必须提供有效的 --slug。');
+    if (args.allowLegacy && !args.noLoop) fail('--allow-legacy 必须与 --no-loop 同用。');
+    if (args.level !== undefined || args.mode !== undefined || args.maxRounds !== undefined ||
+        args.outcome !== undefined || args.errorSig !== undefined || args.evidence !== undefined ||
+        args.target !== undefined || args.reason !== undefined) {
+      fail('gate 不接受 init/reset/record/escalate 专属参数。');
     }
   } else if (action === 'escalate') {
     if (!args.target || !args.target.trim() || !args.reason || !args.reason.trim()) {
@@ -504,6 +605,11 @@ function main(): void {
       process.exit(0);
     }
 
+    if (action === 'gate') {
+      checkCommitGate(repo, task, args.slug as string, state, args);
+      process.exit(0);
+    }
+
     if (action === 'init') {
       if (state !== null) {
         fail('任务 loop 状态已存在；如需重开新周期，请显式使用 reset。');
@@ -532,6 +638,7 @@ function main(): void {
     }
 
     if (action === 'reset') {
+      if (state.status === 'TRIPPED') fail('Loop: TRIPPED；必须先 escalate，再经确认 reset。');
       ensureLocalExclude(repo);
       const nextState: LoopState = {
         version: 1,
@@ -571,7 +678,7 @@ function main(): void {
 
     if (action === 'record') {
       if (state.status !== 'ACTIVE') {
-        fail(`当前状态为 ${state.status}，禁止继续 record；请先 escalate 或经确认后 reset。`);
+        fail(`当前状态为 ${state.status}，禁止继续 record；TRIPPED 必须先 escalate，再经确认 reset。`);
       }
       // Lead serializes writes. These tokens reject stale results, not concurrent writers.
       if (args.cycle !== state.cycle || args.round !== state.round + 1) {
@@ -579,7 +686,7 @@ function main(): void {
       }
       const outcome = args.outcome as Outcome;
       const evidence = outcome === 'pass'
-        ? checkPassEvidence(repo, args.slug as string)
+        ? checkPassEvidence(repo, task, args.slug as string, state.cycle, state.round + 1)
         : { evidence: checkFailureEvidence(repo, args.evidence as string) };
       const errHash = outcome !== 'pass' ? normalizeErrorHash(args.errorSig) : '';
       ensureLocalExclude(repo);

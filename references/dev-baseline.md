@@ -67,15 +67,19 @@
 > Tree: <git write-tree 的完整树 ID>
 > Commit: <代码提交前为 pending，提交后为代码提交的完整 SHA>
 > Slug: <slug>
+> Task: <同 Arena/Loop 使用的任务 ID>
+> Cycle: <本轮 32 位十六进制周期标识；明确未启用 Loop 时为 none>
+> Round: <本次尝试的实际轮次；明确未启用 Loop 时为 none>
 > Scope: <本次验证或审查的实际范围>
 ```
 
 - Verify 写 `PASS` / `FAIL` / `PARTIAL`、实际命令、退出码和未覆盖范围；Review 写 `READY` / `BLOCKED` / `INCOMPLETE`、分级发现和风险接受记录。失败或缺证也按相同格式落盘。
 - `BLOCKER`、验证失败或任何未经用户明确接受并记录的 `MAJOR` 均为 `BLOCKED`。无阻断但缺少同任务同树的必需证据为 `INCOMPLETE`；只有验证 `PASS`、审查证据齐全且无阻断才可 `READY`。
 - `.ship/specs/`、`.ship/plans/`、`.ship/fixes/`、`.ship/verify/`、`.ship/review/` 入库；只有 `.ship/tasks/` 是本地运行状态。Lead 按授权仅暂存代码，记录保持未暂存；`.ship/` 外不得有未暂存或非忽略的未跟踪文件。
-- Handoff：`check-evidence.sh --mode handoff --repo . --slug <slug>` 从工作区读取该 slug 的 PASS 和 READY，两份 `Tree` 必须等于当前 `git write-tree`。脚本缺失或非零退出即停止。
-- Lead 获代码提交授权后才创建代码提交 C。核对两份 `Tree` 与 `C^{tree}` 相同，再更新原有 `Commit` 行；不以新树覆盖旧证据。另获证据暂存和提交授权后，将两份记录一起纳入仅修改 `.ship/` 的证据提交 E，不含 `.ship/tasks/`。E 的消息也须合规，但不需要为 E 自身再取证。
-- Finish：`check-evidence.sh --mode finish --repo . --base <base> --slug <slug>` 从 HEAD 已提交对象读取指定 slug 的记录，核对 PASS/READY、两份 `Tree` 等于 `TaskTip^{tree}`、区间内有同一证据提交包含两份记录，且 `.ship/` 外干净。`TaskTip` 是 `<base>..HEAD` 最后一个非证据提交（无则取 HEAD）；混入代码的提交不享受证据豁免。所有提交仍逐条校验消息，中间代码提交不逐条补证。
+- Handoff：`check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 调用时须带 `--cycle <cycle> --round <round>` 或明确未启用任务的 `--no-loop`。它从工作区读取同一 `Task/Cycle/Round` 的 PASS/READY，两份 `Tree` 必须等于当前 `git write-tree`。缺失或非零退出即停止。
+- 提交：Lead 先运行 `loop-state.sh --repo . --task <id> gate --slug <slug>`（包含 handoff），再按代码提交授权创建 C。两份 `Tree` 必须等于 `C^{tree}`，只更新原有 `Commit` 行，不回填 `Task/Cycle/Round/Tree`。另获证据暂存和提交授权后，将两份记录一起纳入仅修改 `.ship/` 的证据提交 E，不含 `.ship/tasks/`；E 不需要为自己再取证，消息仍须合规。
+- Finish：`check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>` 只从 HEAD 已提交对象读取配对记录，核对 `Task/Cycle/Round`、PASS/READY、最终 `TaskTip^{tree}`，且 `.ship/` 外须干净。`TaskTip` 是 `<base>..HEAD` 最后一个非证据提交（无则取 HEAD）；混入代码的提交不享受证据豁免。新 clone 不需要本地 `loop.json`；所有提交仍逐条校验消息，中间代码提交不逐条补证。
+- 旧版六字段记录只在明确确认任务未启用 Loop 且两份都是旧版时，经 `--no-loop --allow-legacy` 过渡。缺状态、旧周期或字段不一致都不等于未启用；活跃或已知使用过 Loop 的任务应按真实周期重验、复审，不得靠补写记录头放行。
 - `Tree` 是权威绑定，`Commit` 只供追溯。只改提交消息且树不变无需重验；代码树改变必须重跑验证、审查并重新固化证据。风险接受、暂存、代码提交、证据提交及 push/merge 等收尾操作各有授权范围，互不推定。
 
 ### 产物状态枚举（唯一事实源）

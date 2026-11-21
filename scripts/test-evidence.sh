@@ -2,8 +2,10 @@
 set -euo pipefail
 
 check=$(cd "$(dirname "$0")" && pwd)/check-evidence.sh
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+tmp="$scratch/source"
+mkdir "$tmp"
 for variable in $(git rev-parse --local-env-vars); do unset "$variable"; done
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 cd "$tmp"
@@ -21,15 +23,22 @@ tree=$(git write-tree)
 v=.ship/verify/demo.md
 r=.ship/review/demo.md
 mkdir -p .ship/{verify,review}
-record() { printf '> Slug: demo\n> Status: %s\n> Tree: %s\n> Date: 2026-11-21 09:30\n> Commit: %s\n> Scope: code\n' "$2" "$3" "${4:-pending}" > "$1"; }
-handoff=(--mode handoff --slug demo)
-finish=(--mode finish --base "$base" --slug demo)
+record() {
+  printf '> Slug: demo\n> Status: %s\n> Tree: %s\n> Date: 2026-11-21 09:30\n> Commit: %s\n> Scope: code\n' "$2" "$3" "${4:-pending}" > "$1"
+  if [[ ${5:-demo} != legacy ]]; then
+    printf '> Task: %s\n> Cycle: %s\n> Round: %s\n' "${5:-demo}" "${6:-none}" "${7:-none}" >> "$1"
+  fi
+}
+cycle=acbacbacbacbacbacbacbacbacbacbac
+other_cycle=bcabcabcabcabcabcabcabcabcabcab
+handoff=(--mode handoff --slug demo --task demo --no-loop)
+finish=(--mode finish --base "$base" --slug demo --task demo)
 count=0
 failed=0
 expect() {
   local want=$1 name=$2 out rc=0
   shift 2
-  out=$(bash "$check" --repo "$tmp" "$@" 2>&1) || rc=$?
+  out=$(bash "$check" --repo "${target:-$tmp}" "$@" 2>&1) || rc=$?
   count=$((count + 1))
   if [[ $want == PASS && $rc == 0 && $out == *PASS* || $want == BLOCKED && $rc != 0 && $out == *BLOCKED* ]]; then
     printf '[PASS] %s\n' "$name"
@@ -42,7 +51,8 @@ expect() {
 record "$v" PASS "$tree"
 record "$r" READY "$tree"
 expect PASS 暂存代码与未跟踪证据 "${handoff[@]}"
-for key in Status Date Tree Commit Slug Scope; do
+expect BLOCKED handoff须显式声明任务和Loop上下文 --mode handoff --slug demo
+for key in Status Date Tree Commit Slug Scope Task Cycle Round; do
   cp "$r" .ship/original
   sed "/^> $key:/d" .ship/original > "$r"
   expect BLOCKED "缺少$key" "${handoff[@]}"
@@ -51,6 +61,13 @@ for key in Status Date Tree Commit Slug Scope; do
   expect BLOCKED "同值重复$key" "${handoff[@]}"
   mv .ship/original "$r"
 done
+record "$v" PASS "$tree" pending legacy
+record "$r" READY "$tree" pending legacy
+expect BLOCKED 旧证据默认拒绝 "${handoff[@]}"
+expect PASS 明确未启用Loop的旧证据可显式兼容 "${handoff[@]}" --allow-legacy
+record "$v" PASS "$tree"
+expect BLOCKED 不混用新旧证据 "${handoff[@]}" --allow-legacy
+record "$r" READY "$tree"
 sed 's/^> Scope:.*/> Scope:   /' "$r" > .ship/edited
 mv .ship/edited "$r"
 expect BLOCKED 范围全空白 "${handoff[@]}"
@@ -83,6 +100,10 @@ record "$r" READY "$tree"
 printf '> Status: HOLD\n' >> "$r"
 expect BLOCKED 矛盾字段 "${handoff[@]}"
 record "$r" READY "$tree"
+{ printf '<!--\n'; cat "$v"; printf '%s\n' '-->'; } > .ship/edited
+mv .ship/edited "$v"
+expect BLOCKED "HTML注释中的记录头不能授权" "${handoff[@]}"
+record "$v" PASS "$tree"
 printf 'dirty\n' >> code
 expect BLOCKED 未暂存代码 "${handoff[@]}"
 git restore code
@@ -139,5 +160,47 @@ git commit -qm verify
 git checkout "$evidence" -- "$r"
 git commit -qm review
 expect BLOCKED 分开提交不构成同一证据提交 "${finish[@]}"
+
+git reset -q --hard "$tip"
+git checkout "$evidence" -- "$v" "$r"
+mkdir -p .ship/tasks/demo
+printf '{}\n' > .ship/tasks/demo/loop.json
+git add .ship/tasks/demo/loop.json
+git commit -qm evidence-with-local-state
+expect BLOCKED 证据提交不能夹带本地Loop状态 "${finish[@]}"
+
+git reset -q --hard "$tip"
+git clone -q --no-local "$tmp" "$scratch/code-only"
+target="$scratch/code-only" expect BLOCKED 新clone只有代码提交 "${finish[@]}"
+mkdir -p .ship/{verify,review}
+record "$v" PASS "$tree" "$tip" demo "$cycle" 2
+record "$r" READY "$tree" "$tip" demo "$other_cycle" 2
+git add "$v" "$r"
+git commit -qm mismatched-cycle
+expect BLOCKED finish拒绝两份证据周期不一致 "${finish[@]}"
+record "$v" PASS "$tree" "$tip" demo "$cycle" 2
+record "$r" READY "$tree" "$tip" demo "$cycle" 3
+git add "$v" "$r"
+git commit -qm mismatched-round
+expect BLOCKED finish拒绝两份证据轮次不一致 "${finish[@]}"
+record "$v" PASS "$tree" "$tip" other "$cycle" 2
+record "$r" READY "$tree" "$tip" other "$cycle" 2
+git add "$v" "$r"
+git commit -qm wrong-task
+expect BLOCKED finish拒绝同树同slug但任务错误 "${finish[@]}"
+record "$v" PASS "$tree" "$tip" demo "$cycle" 2
+record "$r" READY "$tree" "$tip" demo "$cycle" 2
+git add "$v" "$r"
+git commit -qm bound-evidence
+git clone -q --no-local "$tmp" "$scratch/with-evidence"
+[[ ! -e "$scratch/with-evidence/.ship/tasks" ]]
+target="$scratch/with-evidence" expect PASS 新clone只靠已绑定的入库证据收尾 "${finish[@]}"
+target="$scratch/with-evidence" expect BLOCKED Loop收尾不能声明未启用 "${finish[@]}" --no-loop --allow-legacy
+record "$v" PASS "$tree" "$tip" legacy
+record "$r" READY "$tree" "$tip" legacy
+git add "$v" "$r"
+git commit -qm legacy-evidence
+expect BLOCKED finish默认拒绝旧证据 "${finish[@]}"
+expect PASS finish仅在显式兼容下接受未启用Loop的旧证据 "${finish[@]}" --no-loop --allow-legacy
 printf '%s/%s 通过\n' "$((count - failed))" "$count"
 [[ $failed == 0 ]]

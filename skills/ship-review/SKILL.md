@@ -13,19 +13,29 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
 
 ## Loop 入口与记账
 
-读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-review`。失败暂停；UNINITIALIZED 不自动 init/record。ACTIVE 时核对 Verify 交付的 cycle、round 与证据 slug，不重新领取轮次；TRIPPED/ESCALATED 不启动新尝试。BLOCKED/INCOMPLETE 落盘后由 Lead 携带原 cycle/round、错误签名和实际证据路径 record blocked 一次；READY 时由 Lead 在快照授权范围内执行 `record --stage ship-review --outcome pass --slug <slug> --cycle <本轮cycle> --round <本轮序号>`。脚本复用 handoff 门禁，失败不能宣称 Loop 收敛；重复或旧周期记录不得换新标签重试。CONVERGED 后若代码变化，重验并经确认 reset，不沿用旧收敛状态。
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-review`。失败或缺失已启用任务的状态时暂停；UNINITIALIZED 不自动 init/record。ACTIVE 时核对 Verify 交付的 task、cycle、round 与证据 slug，不重新领取轮次；TRIPPED/ESCALATED 不启动新尝试，不签发交付 READY。BLOCKED/INCOMPLETE 落盘后由 Lead 携带原 cycle/round、错误签名和实际证据路径 record blocked 一次；READY 时由 Lead 在快照授权范围内执行 `record --stage ship-review --outcome pass --slug <slug> --cycle <本轮cycle> --round <本轮序号>`。若 handoff 非零，不得宣称可提交或 Loop 已收敛；旧周期不得换新标签重试。CONVERGED 后若代码变化，须经确认 reset 后重验，不沿用旧收敛状态。
+
+## 模式执行契约
+
+`loop-state.sh status` 回显的 `mode-contract` 是本阶段硬约束：
+
+- `single`：同一 Agent 审查，不派发子 Agent；仍须独立执行判别性测试，不得把实现时的结论直接复制为审查结论。
+- `builder-critic`：由全新上下文的 `Critic` 执行审查与判别性测试；实现者不得自审，也不得修改业务代码。
+- `multi-agent`：`Verifier` 与 `Auditor` 分别独立验收；`Auditor` 只读对照 `references/review-checklist.md`，结论冲突由 Lead 在最终快照裁决。
+
+宿主不支持独立子 Agent 时暂停并请用户切换模式，不得伪造独立审查。
 
 ## 核心原则
 
 - 遵循 `references/dev-baseline.md`、`references/review-checklist.md` 与 `references/git-branch-policy.md`。
 - 若项目 `AGENTS.md` 或 `references/stacks/` 配置了语言专项审查红线，一并纳入审查。
-- **只看真实风险，不刷无意义风格意见**；在 Multi-Agent 模式下必须使用全新干净上下文（`Critic` / `Auditor`）执行，防止“自己写自己审”。
+- **只看真实风险，不刷无意义风格意见**；按上方模式执行契约使用独立上下文，防止“自己写自己审”。
 - **READY 只属于同任务、同树且证据齐全的改动**。有已知阻断时先判 `BLOCKED`，不因同时缺证而降为 `INCOMPLETE`。
 
 ## 执行步骤
 
 1. **收集审查输入**
-   - 读取关联的 spec/plan/fix、同 slug 的验证记录、`git status --short` 与 `git diff --cached`。核对范围及 Verify 的 `Tree` 与审查输入一致；Lead 采集 `git write-tree`，Critic 不执行该命令。
+   - 读取关联的 spec/plan/fix、同 slug 的验证记录、`git status --short` 与 `git diff --cached`。核对 Verify 的 `Task/Cycle/Round/Tree` 与本次输入一致；Lead 采集 `git write-tree`，Critic 不执行该命令。
    - `.ship/` 记录保持未暂存；若其他路径存在未暂存修改或非忽略的未跟踪文件，列出路径交回 Lead，不签发 READY。
 2. **逐项对照风险清单审查**
    - 严格按 `references/review-checklist.md` 的六大维度检查：
@@ -46,12 +56,12 @@ description: 提交前的独立风险审查门禁：对照 .ship/specs/ 与 git 
      - 无上述阻断，但缺少同任务、同树的 PASS 或必需审查证据（含 `PARTIAL`）→ `INCOMPLETE`，列出补齐命令。
      - 同任务同树 PASS、必需证据齐全且无阻断 → `READY`。READY 不授权 Git 写操作。
 5. **落盘审查记录**
-   - 按 `references/dev-baseline.md` 将 Status/Date/Tree/Commit/Slug/Scope、发现和接受依据写入 `.ship/review/<slug>.md`，包括失败裁决。提交前 `check-evidence.sh --mode handoff --repo . --slug <slug>` 读取该记录。
+   - 按 `references/dev-baseline.md` 将 `Task/Cycle/Round` 等记录头、发现及接受依据写入 `.ship/review/<slug>.md`，包括失败裁决。`check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对两份记录。
 ## 输出格式（对话输出 + 落盘记录）
 
 - **审查裁决**：`READY` / `BLOCKED` / `INCOMPLETE`
 - **审查证据对象**：输出本次实际审查快照的 `Tree` 与 `Scope`，并注明与 Verify 证据是否一致；不一致时说明需重跑的验证。不得用审后当前值替换审查输入。
 - **改动范围与契约对齐度**：简述本次 diff 覆盖的核心文件与验收条件对齐情况
 - **发现清单**：按 `BLOCKER` → `MAJOR` → `MINOR` 排序（无问题则明确写“未发现阻断或高风险项”）
-- **下一步**：`READY` 时建议进入 `ship-commit`；`INCOMPLETE` 时给出补齐验证的最小命令。
+- **下一步**：`READY` 且已启用的 Loop 成功记 `pass`，或明确未启用 Loop 时，建议进入 `ship-commit`；否则列出补证或升级动作。
 - **落盘记录**：`.ship/review/<slug>.md` 路径与 Status。

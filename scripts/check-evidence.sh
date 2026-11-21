@@ -14,25 +14,40 @@ def git(*args):
     return subprocess.run(['git', *args], check=True, stdout=subprocess.PIPE).stdout
 
 
+IDENTITY_FIELDS = ('Task', 'Cycle', 'Round')
+
+
 def check_record(data, status, tree, path, slug, mode):
     fields = {}
     fence = None
-    for line in data.decode('utf-8').split('\n'):
+    header_done = False
+    # HTML 注释不构成记录头；先剔除，避免注释内容冒充引用行。
+    text = re.sub(r'<!--.*?-->', '', data.decode('utf-8'), flags=re.S)
+    for line in text.split('\n'):
         line = line.rstrip('\r')
         marker = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
         if fence:
             if marker and marker[1].startswith(fence) and not marker[2].strip():
                 fence = None
             continue
-        if marker:
-            fence = marker[1]
-            continue
-        field = re.fullmatch(r'> (Status|Date|Tree|Commit|Slug|Scope):[ \t]*(.*?)[ \t]*', line)
+        field = re.fullmatch(r'> (Status|Date|Tree|Commit|Slug|Scope|Task|Cycle|Round):[ \t]*(.*?)[ \t]*', line)
         if field:
             key, value = field.groups()
+            if header_done:
+                raise ValueError(f'{path}: {key} 必须位于文档开头唯一的连续记录头')
             if key in fields:
                 raise ValueError(f'{path}: {key} 重复')
             fields[key] = value
+            continue
+        if marker:
+            if not header_done and not fields:
+                raise ValueError(f'{path}: 记录头必须从文档开头直接开始，不能先写代码块')
+            fence = marker[1]
+            continue
+        if line.strip():
+            if not fields:
+                raise ValueError(f'{path}: 记录头必须从文档开头直接开始，不能先写正文')
+            header_done = True
     for key in ('Status', 'Date', 'Tree', 'Commit', 'Slug', 'Scope'):
         if not fields.get(key, '').strip():
             raise ValueError(f'{path}: {key} 必填')
@@ -45,21 +60,65 @@ def check_record(data, status, tree, path, slug, mode):
     if not (mode == 'handoff' and fields['Commit'] == 'pending'):
         if not re.fullmatch(rf'[0-9a-fA-F]{{{len(tree)}}}', fields['Commit']):
             raise ValueError(f'{path}: Commit 需要完整 SHA')
+    return {key: fields[key] for key in IDENTITY_FIELDS if key in fields}
+
+
+def check_identity(identities, paths, task, expected_loop, allow_legacy):
+    if allow_legacy and not any(identities):
+        return
+    for fields, name in zip(identities, paths):
+        for key in IDENTITY_FIELDS:
+            if not fields.get(key):
+                raise ValueError(f'{name}: {key} 必填；不混用新旧证据')
+        if fields['Task'] != task:
+            raise ValueError(f'{name}: 需要 > Task: {task}')
+        cycle, round_no = fields['Cycle'], fields['Round']
+        if expected_loop is not None:
+            for key, value in zip(('Cycle', 'Round'), expected_loop):
+                if fields[key] != value:
+                    raise ValueError(f'{name}: 需要 > {key}: {value}')
+        if (cycle, round_no) != ('none', 'none') and not (
+                re.fullmatch(r'[0-9a-f]{32}', cycle) and re.fullmatch(r'[1-5]', round_no)):
+            raise ValueError(f'{name}: Cycle/Round 必须为有效周期和轮次，或均为 none')
+    if identities[0] != identities[1]:
+        raise ValueError('两份记录的 Task/Cycle/Round 必须一致')
 
 
 def run(args):
     options = {}
-    for i in range(0, len(args), 2):
-        key = args[i]
-        if (key not in ('--repo', '--mode', '--base', '--slug') or key in options
-                or i + 1 == len(args) or not args[i + 1] or args[i + 1].startswith('--')):
+    args = iter(args)
+    for key in args:
+        if key in options:
+            raise ValueError(f'参数重复: {key}')
+        if key in ('--no-loop', '--allow-legacy'):
+            options[key] = True
+            continue
+        value = next(args, '')
+        if (key not in ('--repo', '--mode', '--base', '--slug', '--task', '--cycle', '--round')
+                or not value or value.startswith('--')):
             raise ValueError(f'参数无效或缺值: {key}')
-        options[key] = args[i + 1]
+        options[key] = value
     mode = options.get('--mode')
     slug = options.get('--slug', '')
+    task = options.get('--task', '')
     if (mode not in ('handoff', 'finish') or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]*', slug)
+            or len(task) > 100 or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', task)
             or (mode == 'finish') != ('--base' in options)):
-        raise ValueError('用法: --mode handoff|finish --slug <slug> [--repo <path>]（finish 必传 --base <ref>）')
+        raise ValueError('用法: --mode handoff|finish --slug <slug> --task <id> [--repo <path>]（finish 必传 --base <ref>）')
+    no_loop = '--no-loop' in options
+    allow_legacy = '--allow-legacy' in options
+    has_tokens = '--cycle' in options or '--round' in options
+    expected_loop = ('none', 'none') if no_loop else None
+    if allow_legacy and not no_loop:
+        raise ValueError('--allow-legacy 仅适用于明确未启用 Loop 的任务（--no-loop）')
+    if has_tokens:
+        cycle, round_no = options.get('--cycle', ''), options.get('--round', '')
+        if (mode != 'handoff' or no_loop or not re.fullmatch(r'[0-9a-f]{32}', cycle)
+                or not re.fullmatch(r'[1-5]', round_no)):
+            raise ValueError('handoff 的 --cycle/--round 必须成对提供且不与 --no-loop 同用')
+        expected_loop = (cycle, round_no)
+    if mode == 'handoff' and expected_loop is None:
+        raise ValueError('handoff 必须提供本轮 --cycle/--round，或显式 --no-loop')
     os.chdir(options.get('--repo', '.'))
     os.chdir(os.fsdecode(git('rev-parse', '--show-toplevel').removesuffix(b'\n')))
     paths = [f'.ship/{kind}/{slug}.md' for kind in ('verify', 'review')]
@@ -92,7 +151,8 @@ def run(args):
                 continue
             diff = git('diff-tree', '--root', '--no-renames', '--no-commit-id', '--name-only', '-r', '-z', commit)
             changed = set(diff.split(b'\0')) - {b''}
-            evidence_only = bool(changed) and all(p.startswith(b'.ship/') for p in changed)
+            evidence_only = bool(changed) and all(
+                p.startswith(b'.ship/') and not p.startswith(b'.ship/tasks/') for p in changed)
             if paired is None and changed & record_paths:
                 paired = evidence_only and record_paths <= changed
             if not evidence_only:
@@ -106,8 +166,9 @@ def run(args):
             if not entry.startswith((b'100644 blob ', b'100755 blob ')):
                 raise ValueError(f'HEAD 缺少常规记录文件: {name}')
             records.append(git('cat-file', 'blob', f'{head}:{name}'))
-    for data, status, path in zip(records, ['PASS', 'READY'], paths):
-        check_record(data, status, tree, path, slug, mode)
+    identities = [check_record(data, status, tree, name, slug, mode)
+                  for data, status, name in zip(records, ('PASS', 'READY'), paths)]
+    check_identity(identities, paths, task, expected_loop, allow_legacy)
     print(f'PASS {mode} slug={slug} tree={tree}')
 
 

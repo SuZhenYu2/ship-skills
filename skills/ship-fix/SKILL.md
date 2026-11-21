@@ -13,7 +13,17 @@ description: 排查 Bug 或线上故障：先复现并做假设证伪定位真�
 
 ## Loop 入口与交接
 
-读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-fix`。状态失败暂停；未初始化走常规流程，不自动 init/record。TRIPPED/ESCALATED 不开启新一轮修复；CONVERGED 后新增改动须经确认 reset。ACTIVE 时固定本轮 cycle 与 round=已完成轮次+1，并交接给 Verify/Review；假设证伪步骤不逐条计轮。无法继续的阻塞须保存非空证据，由 Lead record blocked 一次；实际修复返工与 Multi-Agent 共享同一轮次预算。
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-fix`。状态读取失败或已启用任务的状态缺失时暂停，不自动 init/record。TRIPPED/ESCALATED 不开启新一轮修复；CONVERGED 后新增改动须经确认 reset。ACTIVE 时固定本轮 cycle 与 round=已完成轮次+1，连同 task、slug 交给 Verify/Review；假设证伪步骤不逐条计轮。无法继续的阻塞须保存非空证据，由 Lead record blocked 一次；实际修复返工与 Multi-Agent 共享同一轮次预算。
+
+## 模式执行契约
+
+`loop-state.sh status` 回显的 `mode-contract` 决定排障阶段的派发方式：
+
+- `single`：主 Agent 复现、定位与修复，不派发子 Agent。
+- `builder-critic`：修复与验收分离；Builder 只改根因，验收交给 Verify 派发的全新 Critic，实现者不得自审。
+- `multi-agent`：`Investigator` 只读源码（必要时仅在测试目录写最小复现），契约与白名单冻结后由 Builder 修复，Lead 合并并重新取证。
+
+宿主不支持独立子 Agent 时，必须暂停并请用户改档，不得把 `builder-critic`/`multi-agent` 静默降级为单路。
 
 ## 何时使用 / 何时不用
 

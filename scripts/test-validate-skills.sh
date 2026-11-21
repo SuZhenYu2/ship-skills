@@ -106,5 +106,21 @@ cp "${REPO_ROOT}/skills/ship-review/SKILL.md" "$review"
 printf '\n将整个 `.ship/` 加入 .gitignore。\n' >> "$review"
 expect_fail "整目录忽略的旧规则被拦截" bash "${T_CONTRACT}/scripts/validate-skills.sh"
 
+commit="${T_HEALTHY}/skills/ship-commit/SKILL.md"
+ruby -pi -e 'gsub(/loop-state\.sh[^`\n]*\bgate\b[^`\n]*/, "旧提交门禁")' "$commit"
+expect_fail "提交阶段遗漏Loop门禁被拦截" bash "${T_HEALTHY}/scripts/validate-skills.sh"
+
+T_MODE="${TMP_ROOT}/mode-contract"
+copy_repo "${T_MODE}"
+verify="${T_MODE}/skills/ship-verify/SKILL.md"
+ruby -pi -e 'gsub(/全新上下文/, "同一上下文")' "$verify"
+expect_fail "验证阶段遗漏独立Critic契约被拦截" bash "${T_MODE}/scripts/validate-skills.sh"
+
+T_ROUTE="${TMP_ROOT}/route-closure"
+copy_repo "${T_ROUTE}"
+auto="${T_ROUTE}/skills/ship-auto/SKILL.md"
+ruby -pi -e 'gsub(/L2\/L3 默认启用/, "Loop 可选")' "$auto"
+expect_fail "路由缺少Loop启用闭环被拦截" bash "${T_ROUTE}/scripts/validate-skills.sh"
+
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

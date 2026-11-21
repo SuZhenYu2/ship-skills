@@ -1,7 +1,6 @@
 # difficulty-loop 设计：任务难度路由与受控执行循环
 
-> Status: DRAFT
-> 范围：任务级难度定级（L1 / L2 / L3）、执行工具与编排模式路由、以及确定性受控 Loop 状态机接口；运行事实以脚本结果与验证证据为准。
+> 范围：任务级难度定级（L1 / L2 / L3）、编排模式建议、Loop 状态机与交付门禁。`mode` 不代表宿主已派发 Agent；运行事实以脚本结果与验证证据为准。
 
 ## 1. 定位与设计原则
 
@@ -9,7 +8,7 @@
 
 核心边界：
 
-- **不替代原有门禁**：验证（`ship-verify`）、审查（`ship-review`）、快照一致性（`check-evidence.sh --mode handoff --repo . --slug <slug>`）与 Git 写操作授权红线保持不变。
+- **不替代原有门禁**：保留验证（`ship-verify`）、审查（`ship-review`）、快照校验和 Git 写操作授权。提交前检查当前 Loop 是否收敛，收尾只认证已提交的任务最终树与证据。
 - **不打破控制权**：`ship-auto` 仍坚持“只评估、只推荐，不代执行”；是否切换模式、是否开启 `ship-arena` 均由用户确认。
 - **任务严格隔离**：状态按仓库与任务 `<id>` 隔离存放，任务不明确先确认，禁止猜测全局 active task。
 - **确定性熔断**：轮次计数、同错停滞检测与熔断状态由 `scripts/loop-state.sh` 硬校验，不依赖模型在长上下文中口头数轮次。
@@ -36,19 +35,27 @@
 
 | 难度 | 前置阶段 | 推荐工具 / 编排模式（`mode`） | `ship-arena` 建议 | Loop 形态与默认预算 |
 | --- | --- | --- | --- | --- |
-| **L1** | 跳过 `ship-grill` / `ship-plan` | `single`（单 Agent 直出实现与自测） | 默认 `OFF`（不建议开启） | 轻量实现-验证循环：`Act → Verify`，`max_rounds=2` |
+| **L1** | 跳过 `ship-grill` / `ship-plan` | `single`（单 Agent 直出实现与自测） | 默认 `OFF`（不建议开启） | 若启用，仍按 `Act → Verify → Review` 计轮，`max_rounds=2` |
 | **L2** | `ship-spec`（新需求）或 `ship-fix`（排障） | `builder-critic`（单路实现 + 干净上下文 `Critic` 独立验收；DSH 排障可结合 `ralph`） | 按需可选（复杂根因时可开） | 实现-验收收敛循环：`Act → Verify/Review → Fix`，`max_rounds=2` |
-| **L3** | `ship-grill` → `ship-plan`（契约冻结与文件白名单） | `multi-agent`（`Scout` 摸底 + 契约冻结 + 互斥白名单 `Builder` + `Verifier`/`Auditor` 分离验收） | 建议 `ON`（用于方案、根因与双视角审查比选） | 双层循环：设计层最多重跑 1 次；实现层同 `BLOCKER` 收敛 `max_rounds=2` |
+| **L3** | `ship-grill` → `ship-plan`（契约冻结与文件白名单） | `multi-agent`（`Scout` 摸底 + 契约冻结 + 互斥白名单 `Builder` + `Verifier`/`Auditor` 分离验收） | 建议 `ON`（用于方案、根因与双视角审查比选） | Loop 仅统计实现与验收，`max_rounds=2`；设计复核由 `ship-plan` 单独记录 |
 
 > 与 `ship-arena` 的正交约定：路由表只输出建议，不自动修改 `.ship/tasks/<id>/arena.json`；是否开启 Arena 仍由用户通过 `ship-arena` 显式操作，且 Arena 仍保持默认不并行业务实现。
 
+### 启用闭环
+
+L2 / L3 默认启用 Loop，L1 可选。`ship-auto` 输出 level/mode/budget 与 `init` 命令，经用户确认后执行 `init`；用户明确跳过时，后续提交必须 `--no-loop` 且证据写 `Cycle/Round: none`。状态文件缺失不等于未启用，不得据此绕过。
+
+### 模式执行契约
+
+`status` 回显的 `mode-contract` 是执行要求而非事实。`single` 不派发子 Agent；`builder-critic` 的 Verify/Review 必须使用全新上下文 `Critic` 并附判别性测试原始输出；`multi-agent` 的 `Scout`、`Builder`、`Verifier`、`Auditor` 按互斥白名单与独立验收执行。宿主无独立子 Agent 时暂停改档，不得静默降级或伪造独立审查。
+
 ## 4. `scripts/loop-state.sh` 状态机接口
 
-由 Bash 入口调用 TypeScript（Node.js 原生运行，零第三方依赖、不依赖 Python）后端，与 `scripts/arena-state.sh` 保持一致的安全与工程约定：
+由 Bash 入口调用 TypeScript（Node.js 原生运行，零第三方依赖）后端；`record pass` 与 `gate` 复用需要 Python 3.9+ 的证据检查脚本：
 
 - `--repo <root>` 必须指向 Git 工作区根目录；任务 `<id>` 匹配 `[a-z0-9]+(?:-[a-z0-9]+)*`，最长 100 字符。
 - 状态路径：`<root>/.ship/tasks/<id>/loop.json`；禁止路径上出现任何符号链接。
-- 写操作（`init` / `record` / `escalate` / `reset`）使用临时文件 + `os.replace` 原子落盘，并沿用 `git rev-parse --git-path info/exclude` 追加 `/.ship/tasks/`，不修改业务 `.gitignore`（写操作前同样须披露本地元数据写入）。
+- 写操作（`init` / `record` / `escalate` / `reset`）使用同目录临时文件与原子重命名，并沿用 `git rev-parse --git-path info/exclude` 维护 `/.ship/tasks/`，不修改业务 `.gitignore`（写入前须披露）。
 - `status` 只读，不创建文件；缺文件报告 `UNINITIALIZED`；文件损坏、版本或字段非法、环境缺失均硬失败（退出码 `1`）并暂停，不静默重置。
 
 ### 4.1 状态文件 Schema（`.ship/tasks/<id>/loop.json`）
@@ -63,8 +70,8 @@
   "status": "ACTIVE",
   "round": 1,
   "max_rounds": 2,
-  "stall_count": 0,
-  "last_error_hash": "",
+  "stall_count": 1,
+  "last_error_hash": "9f86d081884c7d65",
   "history": [
     {
       "round": 1,
@@ -80,8 +87,8 @@
 状态枚举（`status`）：
 
 - `ACTIVE`：处于受控循环中，可继续推进下一轮。
-- `CONVERGED`：已收到真实 `pass` 门禁证据，循环正常收敛退出。
-- `TRIPPED`：触发硬熔断（`round >= max_rounds` 或连续 2 轮 `error_hash` 相同导致 `stall_count >= 2`），禁止继续自动重试。
+- `CONVERGED`：PASS/READY 已核对同一 `Task/Cycle/Round/Tree`，只允许将该快照用于提交门禁。
+- `TRIPPED`：触发硬熔断（`round >= max_rounds` 或连续 2 轮 `error_hash` 相同导致 `stall_count >= 2`），禁止 `record`、`gate` 放行或直接 `reset`。
 - `ESCALATED`：已记录升级去向（回退 `ship-plan` 或交由用户拍板），等待新决策后方可 `reset`。
 
 ### 4.2 命令行接口
@@ -96,7 +103,7 @@ bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage 
 
 # 3. 记录本轮真实门禁结果并判定是否继续 / 收敛 / 熔断
 bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> record \
-  --stage ship-verify --outcome fail \
+  --stage ship-verify --outcome fail --cycle <本轮cycle> --round <本轮序号> \
   --error-sig "AssertionError: timeout status expected CANCELLED" \
   --evidence .ship/verify/order-timeout.md
 
@@ -107,7 +114,11 @@ bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> escalate \
 # 5. 方案重定或档位升级后开启新周期（刷新 cycle，清空当前轮次）
 bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> reset \
   --level L3 --mode multi-agent --max-rounds 2
+
+bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> gate --slug <slug>
 ```
+
+`gate` 不暂存代码、不提交、不写 Loop 状态。仅确认任务未启用时才传 `--no-loop`；旧记录另需 `--allow-legacy`。收尾不调用此 gate，而由 `check-evidence.sh --mode finish` 核对 HEAD 中的配对证据，不依赖本地状态。
 
 ### 4.3 退出码与统一回显约定
 
@@ -120,6 +131,7 @@ bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> reset \
 ```text
 [ship-tdd] Loop: ACTIVE | 范围: order-timeout | 难度: L2 | 模式: builder-critic | 轮次: 1/2
 cycle=a1b2c3d4e5f60718293a4b5c6d7e8f90
+mode-contract: builder-critic | 实现与验收分离；Critic 必须使用全新上下文，至少执行一个判别性测试并附原始输出
 ```
 
 ## 5. 受控 Loop 执行约束与 Runtime 映射
@@ -140,10 +152,9 @@ cycle=a1b2c3d4e5f60718293a4b5c6d7e8f90
 | **L1 / L2 循环执行** | 主会话或单 `Builder` 配合干净 `Critic` subagent，每轮结束由 Lead 调用 `loop-state.sh record` | 常规实现同 Codex；复杂排障可结合原生 `ralph` 迭代，并由 `loop-state.sh` 做硬熔断兜底 |
 | **L3 并行与比选** | 契约冻结后按白名单派发 subagent（可配 managed worktree），按需配合 `ship-arena` | 原生 `subagent` 并行 + 按需 `ship-arena`；跑偏时通过 `interrupt_agent` 及时止损 |
 
-## 6. 验收关注点与后续落地范围
+## 6. 验收与后续范围
 
-本设计文档仅用于方案对齐，不代替代码与测试证据。进入实现阶段需覆盖：
+以 `references/loop-policy.md`、脚本及实际命令证据为准：
 
-- **共享协议**：新增 `references/loop-policy.md`，定义各阶段接入 `loop-state.sh` 的边界。
-- **脚本与单测**：新增 `scripts/loop-state.sh`（`+x`）及 `scripts/test-loop-state.sh`（覆盖初始化、默认 `UNINITIALIZED`、损坏硬失败、符号链接拒绝、linked worktree、同错停滞提前熔断、超轮次熔断、`TRIPPED` 态禁止继续 `record`、`escalate`/`reset` 状态流转）。
-- **入口与分发**：升级 `skills/ship-auto/SKILL.md` 增加 L1/L2/L3 评估与路由输出；更新 `scripts/install.sh` 与 `scripts/validate-skills.sh`，确保新协议与脚本随安装自包含分发并通过全量校验。
+- **脚本回归**：`scripts/test-loop-state.sh` 检查熔断、升级、证据串用、缺失状态、提交门禁与 `mode-contract` 回显；`scripts/test-evidence.sh` 检查证据配对、新旧兼容以及新 clone 收尾。
+- **宿主行为**：路由值不是编排执行证据；实际独立审查、派发和工作区隔离须单独验证。Loop 状态由 Lead 串行写入，不提供并发锁或自动调度。

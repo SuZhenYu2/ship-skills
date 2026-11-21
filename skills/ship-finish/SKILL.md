@@ -27,8 +27,8 @@ description: 验证与审查通过后的分支收尾：优先调用确定性脚�
    - 运行 `git status --short` 确认 `.ship/` 外干净；未提交的记录不能作为收尾证据。
    - 优先调用 `<skill-dir>/scripts/check-git-policy.sh --repo . --mode range --base <target-base>`（若脚本不可用则逐条读取 `git log <base>..HEAD` 对照正则核验），校验当前分支与全部提交的飞书需求 ID。`<target-base>` 默认来源见 `references/git-branch-policy.md`，未指明时向用户确认。
 2. **核对任务最终快照的已提交证据**
-   - 确认唯一任务 slug，运行 `bash <skill-dir>/scripts/check-evidence.sh --mode finish --repo . --base <base> --slug <slug>`。只读 HEAD 中该 slug 的 verify/review；不得用工作区文件或对话替代。脚本缺失或非零退出即 `BLOCKED`。
-   - `TaskTip` 为区间内最后一个非证据提交（没有则取 HEAD）。两份记录必须为 PASS/READY，`Tree` 都等于 `TaskTip^{tree}`，且有同一仅改 `.ship/` 的证据提交包含两份记录。中间提交只校验消息，不逐条索证。
+   - 确认任务 ID 与唯一 slug，运行 `bash <skill-dir>/scripts/check-evidence.sh --mode finish --repo . --base <base> --slug <slug> --task <id>`。只读 HEAD 中该 slug 的 verify/review，不读取本地 `loop.json`；新 clone 取得完整任务区间即可复核。脚本缺失或非零退出即 `BLOCKED`。
+   - `TaskTip` 为区间内最后一个非证据提交（没有则取 HEAD）。两份记录必须为 PASS/READY，`Task/Cycle/Round` 一致且 `Tree` 都等于 `TaskTip^{tree}`，且有同一仅改 `.ship/` 的证据提交包含两份记录。中间提交只校验消息，不逐条索证。明确确认从未启用 Loop 的旧任务才可附加 `--no-loop --allow-legacy`，不能因本地状态缺失而选兼容模式。
    - 仅改提交消息不因 `Commit` 过期而失效；树改变需对最终代码快照重验、复审，再按独立授权固化证据，不重新提交相同代码。
 3. **生成 PR / 合并说明草稿**
    - 包含：关联飞书 `<req-id>`、分支与目标基线、变更摘要、验证证据与未覆盖范围、风险与回滚方案。

@@ -13,7 +13,15 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
 
 ## Loop 入口与交接
 
-读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-verify`。失败暂停；UNINITIALIZED 不自动 init/record。ACTIVE 时核对上游交付的 cycle 与 round，不因阶段切换增加轮次；直接进入本阶段时由 Lead 明确本轮标识。TRIPPED/ESCALATED 仅补充诊断或升级，不开启新尝试。FAIL/PARTIAL 落盘后，Lead 携带原 cycle/round、非空错误签名和证据路径 record fail/blocked 一次并结束本轮；PASS 不 record，连同标识与证据 slug 交给 Review。已经记账的尝试不得在 Review 再记一次。
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-verify`。失败暂停；UNINITIALIZED 不自动 init/record，且缺失已启用任务的状态时暂停。ACTIVE 时核对上游交付的 task、cycle 与 round，不因阶段切换增加轮次；直接进入时由 Lead 明确本轮标识。TRIPPED/ESCALATED 仅补充诊断或升级，不签发交付 PASS。FAIL/PARTIAL 落盘后，Lead 携带原 cycle/round、非空错误签名和证据路径 record fail/blocked 一次并结束本轮；PASS 不 record，连同标识与证据 slug 交给 Review。已记账的尝试不得在 Review 再记一次。
+
+## 模式执行契约
+
+`loop-state.sh status` 回显的 `mode-contract` 是本阶段的硬约束，不能当作已完成事实：
+
+- `single`：同一 Agent 完成验证，不派发子 Agent；仍须真实运行命令并保留原始输出，不得以“已读代码”代替执行。
+- `builder-critic`：必须派发全新上下文的 `Critic`，提供 spec/plan 路径、diff 与当前快照，要求至少执行一个判别性测试并返回原始命令、退出码与输出；实现者不得兼任 Critic。宿主不支持独立子 Agent 时暂停并请用户切换模式，不得伪造独立审查。
+- `multi-agent`：`Verifier` 负责构建、测试与静态检查取证，`Auditor` 只读对照 `references/review-checklist.md` 审计；两者使用独立上下文，事实冲突由 Lead 在最终快照重跑裁决。
 
 ## 核心原则
 
@@ -33,7 +41,7 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
      3. 自动探测项目构建文件（如 `pom.xml`、`build.gradle`、`package.json`、`go.mod`、`pyproject.toml`、`Cargo.toml`、`Makefile` 等）。
 3. **执行验证并记录证据**
    - 依次运行：编译/类型检查 → 受影响模块的单元测试 →（按风险或用户要求）全量测试与静态检查。
-   - 若处于 Multi-Agent 模式，建议由独立上下文的 `Critic`（或 `Verifier`）执行，避免与实现线程共享隐藏状态。
+   - 按上方的模式执行契约派发：`builder-critic` 与 `multi-agent` 不得由实现线程自行验证；`single` 不派发子 Agent。
    - Arena 默认由两路独立分析验证范围、Lead 协调命令；共享输出目录时串行，读取同一份输出只能称“两路分析、一次执行”。需要两次独立执行时，Lead 按 `references/arena-policy.md` 准备同一快照的独占副本，并记录执行者、快照、工作目录、退出码与输出；候选不能改原工作区或自行创建 worktree。
    - 验证过程中 代码树、验证范围或 `.ship/` 外工作区发生变化时，必须重新记录证据对象并对最终快照重跑，不能沿用旧结论。
 4. **处理失败与缺口**
@@ -41,12 +49,12 @@ description: 声称完成、修复或可提交前的强制验证门禁：动态�
    - 若因环境限制（如缺少外部 DB/网络/凭据）导致部分检查无法运行，必须明确标注“未验证范围”。
    - 必需门禁未运行或未通过时，结论只能是 `PARTIAL` 或 `FAIL`；`PARTIAL` 不得被下游映射为 `PASS` 或 `READY`。
 5. **落盘验证记录**
-   - 按 `references/dev-baseline.md` 的记录契约写入 `.ship/verify/<slug>.md`（Status/Date/Tree/Commit/Slug/Scope + 命令证据表 + 未覆盖范围）。`FAIL` / `PARTIAL` 同样落盘，未通过不得交接；提交前由 `check-evidence.sh --mode handoff --repo . --slug <slug>` 核对。
+   - 按 `references/dev-baseline.md` 写入 `.ship/verify/<slug>.md`（包含 `Task/Cycle/Round`、命令证据表与未覆盖范围）；仅明确未启用 Loop 的任务可写 `Cycle: none`、`Round: none`。`FAIL` / `PARTIAL` 同样落盘，未通过不得交接。两份记录齐全后由 `check-evidence.sh --mode handoff --repo . --slug <slug> --task <id>` 携带本轮 `--cycle/--round` 或经确认的 `--no-loop` 核对。
 
 ## 输出格式（对话输出 + 落盘记录）
 
 - **验证结论**：`PASS` / `FAIL` / `PARTIAL`（附未覆盖项说明）
-- **证据对象**：`Tree=<实际验证树>`、任务 slug 与验证范围、工作区状态（`clean` 或 `dirty: <文件列表>`）；工作区不干净时注明本次验证的是哪个快照
+- **证据对象**：`Tree=<实际验证树>`、任务 ID、slug、周期/轮次及验证范围；分开报告已暂存范围和未暂存/非忽略未跟踪内容。
 - **命令证据表**：每条实际运行的命令、退出码、核心结果摘要（例如通过/失败用例数、耗时或关键日志行）。
 - **未验证门禁**：`PARTIAL` 时列出未运行的门禁、原因与补齐命令
 - **下一步建议**：全绿则进入 `ship-review`；失败则给出最直接的修复定位。

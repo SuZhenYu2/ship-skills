@@ -13,7 +13,17 @@ description: 按行为风险实施代码改动与自动化测试：新行为优�
 
 ## Loop 入口与交接
 
-读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-tdd`。状态失败暂停；未初始化走常规流程，不自动 init/record。TRIPPED/ESCALATED 不开启新一轮实现；CONVERGED 后新增改动须经确认 reset。ACTIVE 时固定本轮 cycle 与 round=已完成轮次+1，随代码交给 Verify，再由 Review 或首次终态失败的阶段交给 Lead 记录一次。TDD Red 与本地自测通过均不等于本轮结束；不可继续的阻塞按协议保存证据后记录 blocked。
+读取 `references/loop-policy.md`，执行 `bash <skill-dir>/scripts/loop-state.sh --repo <root> --task <id> status --stage ship-tdd`。状态读取失败或已启用任务的状态缺失时暂停，不自动 init/record。TRIPPED/ESCALATED 不开启新一轮实现；CONVERGED 后新增改动须经确认 reset。ACTIVE 时固定本轮 cycle 与 round=已完成轮次+1，连同 task、slug 交给 Verify，再由 Review 或首次终态失败的阶段交给 Lead 记录一次。TDD Red 与本地自测通过均不等于本轮结束；不可继续的阻塞按协议保存证据后记录 blocked。
+
+## 模式执行契约
+
+`loop-state.sh status` 回显的 `mode-contract` 决定实现阶段的派发方式：
+
+- `single`：单 Agent 实现与自测，不派发子 Agent。
+- `builder-critic`：Builder 只做实现与自测，验收交给 Verify 派发的全新 Critic；Builder 不得同时担任 Critic。
+- `multi-agent`：Lead 先冻结共享契约，再按互斥文件白名单派发 Builder；禁止两个 Builder 修改同一文件或执行 Git 写操作。
+
+宿主不支持独立子 Agent 时，按 `single` 执行会违反已记录的 `builder-critic`/`multi-agent` 契约，必须暂停并请用户改档，不得静默降级。
 
 ## 核心原则
 
