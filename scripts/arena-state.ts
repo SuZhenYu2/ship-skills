@@ -1,0 +1,238 @@
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+
+const STRATEGIES: Record<string, string> = {
+  'ship-arena': '配置任务开关',
+  'ship-auto': '只读导航',
+  'ship-grill': '独立分析需求缺口，由 Lead 合并追问',
+  'ship-spec': '独立分析验收条件，由 Lead 汇总 Spec',
+  'ship-plan': '双候选方案比选',
+  'ship-tdd': '测试设计与高风险策略比选，不并行业务实现',
+  'ship-fix': '独立根因假设证伪与修复方案比选',
+  'ship-verify': '同一最终快照独立验证，事实不投票',
+  'ship-review': '独立双视角审查，有效 BLOCKER 必须阻断',
+  'ship-commit': 'Lead 串行提交门禁，仅执行一次 Git 写操作',
+  'ship-finish': '独立复核交付证据，Git 收尾仅由 Lead 串行执行',
+};
+
+const ACTIONS = new Set(['on', 'off', 'status', 'check'] as const);
+type Action = 'on' | 'off' | 'status' | 'check';
+
+interface ArenaState {
+  version: 1;
+  enabled: boolean;
+  policy: 'selective';
+  candidates: 2;
+  generation?: string;
+}
+
+interface ParsedArgs {
+  repo: string;
+  task?: string;
+  stage?: string;
+  generation?: string;
+  action?: Action;
+}
+
+function fail(message: string): never {
+  process.stderr.write(`[ERROR] ${message}\n`);
+  process.exit(1);
+}
+
+function parseCliArgs(argv: string[]): ParsedArgs {
+  const parsed: ParsedArgs = { repo: '.' };
+  const valueFlags = new Set(['--repo', '--task', '--stage', '--generation']);
+
+  let i = 0;
+  while (i < argv.length) {
+    const token = argv[i];
+    if (token === '-h' || token === '--help') {
+      process.stdout.write(
+        'Usage: arena-state.sh --repo <root> --task <id> [--stage <stage>] [--generation <hex>] <on|off|status|check>\n',
+      );
+      process.exit(0);
+    }
+    if (valueFlags.has(token)) {
+      if (i + 1 >= argv.length) {
+        fail(`参数 ${token} 缺少取值。`);
+      }
+      const value = argv[i + 1];
+      i += 2;
+      if (token === '--repo') parsed.repo = value;
+      else if (token === '--task') parsed.task = value;
+      else if (token === '--stage') parsed.stage = value;
+      else if (token === '--generation') parsed.generation = value;
+      continue;
+    }
+    if (token.startsWith('-')) {
+      fail(`未知参数：${token}`);
+    }
+    if (parsed.action) {
+      fail(`多余的位置参数：${token}`);
+    }
+    if (!ACTIONS.has(token as Action)) {
+      fail(`未知操作：${token}（仅支持 on | off | status | check）`);
+    }
+    parsed.action = token as Action;
+    i += 1;
+  }
+
+  if (!parsed.action) {
+    fail('必须指定操作：on | off | status | check。');
+  }
+  if (parsed.task === undefined) {
+    fail('必须提供 --task 参数。');
+  }
+  return parsed;
+}
+
+function runGit(repo: string, args: string[]): string {
+  return execFileSync('git', ['-C', repo, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function isSymlinkIfExists(targetPath: string): boolean {
+  try {
+    return fs.lstatSync(targetPath).isSymbolicLink();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+function validateState(raw: unknown): ArenaState {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    fail('arena 配置格式或版本无效；请明确修复后重试，不会静默覆盖。');
+  }
+  const obj = raw as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  const baseKeys = ['version', 'enabled', 'policy', 'candidates'];
+  const validWithoutGen = keys.length === 4 && baseKeys.every((k) => k in obj);
+  const validWithGen = keys.length === 5 && baseKeys.every((k) => k in obj) && 'generation' in obj;
+
+  if (
+    (!validWithoutGen && !validWithGen) ||
+    !Number.isInteger(obj.version) ||
+    obj.version !== 1 ||
+    typeof obj.enabled !== 'boolean' ||
+    obj.policy !== 'selective' ||
+    !Number.isInteger(obj.candidates) ||
+    obj.candidates !== 2
+  ) {
+    fail('arena 配置格式或版本无效；请明确修复后重试，不会静默覆盖。');
+  }
+  if ('generation' in obj && (typeof obj.generation !== 'string' || !/^[0-9a-f]{32}$/.test(obj.generation))) {
+    fail('arena generation 格式无效。');
+  }
+  return obj as unknown as ArenaState;
+}
+
+function atomicWriteJson(filePath: string, data: ArenaState): void {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tempPath = path.join(dir, `.arena-${process.pid}-${randomUUID().replace(/-/g, '')}.tmp`);
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  }
+}
+
+function main(): void {
+  const args = parseCliArgs(process.argv.slice(2));
+  const task = args.task as string;
+  const action = args.action as Action;
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(task) || task.length > 100) {
+    fail('task 必须为不超过 100 字符的小写字母、数字及分隔短横线。');
+  }
+  if (args.stage !== undefined && !(args.stage in STRATEGIES)) {
+    fail(`未知 ship 阶段：${args.stage}`);
+  }
+  if ((action === 'check') !== Boolean(args.generation)) {
+    fail('check 必须提供 --generation；其他操作不得提供该参数。');
+  }
+
+  try {
+    const repo = fs.realpathSync(args.repo);
+    const topLevel = fs.realpathSync(runGit(repo, ['rev-parse', '--show-toplevel']));
+    if (topLevel !== repo) {
+      fail('--repo 必须指向 Git 工作区根目录。');
+    }
+
+    const shipDir = path.join(repo, '.ship');
+    const tasksDir = path.join(shipDir, 'tasks');
+    const taskDir = path.join(tasksDir, task);
+    const statePath = path.join(taskDir, 'arena.json');
+
+    for (const item of [shipDir, tasksDir, taskDir, statePath]) {
+      if (isSymlinkIfExists(item)) {
+        fail(`状态路径不能包含符号链接：${item}`);
+      }
+    }
+
+    let state: ArenaState = {
+      version: 1,
+      enabled: false,
+      policy: 'selective',
+      candidates: 2,
+    };
+    if (fs.existsSync(statePath)) {
+      const parsed: unknown = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      state = validateState(parsed);
+    }
+
+    if (action === 'check') {
+      if (!state.enabled || !state.generation || state.generation !== args.generation) {
+        fail('候选批次已失效或未绑定；禁止接收旧结果。');
+      }
+    }
+
+    if (action === 'on' || action === 'off') {
+      const excludeRaw = runGit(repo, ['rev-parse', '--git-path', 'info/exclude']);
+      const excludePath = path.isAbsolute(excludeRaw) ? excludeRaw : path.join(repo, excludeRaw);
+      const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : '';
+      const lines = existing.split(/\r?\n/);
+      if (!lines.includes('/.ship/')) {
+        fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+        const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+        fs.appendFileSync(excludePath, `${prefix}/.ship/\n`, 'utf8');
+      }
+      state.enabled = action === 'on';
+      state.generation = randomUUID().replace(/-/g, '');
+      atomicWriteJson(statePath, state);
+    }
+
+    const label = args.stage ?? 'ship';
+    const enabledText = state.enabled ? 'ON' : 'OFF';
+    const strategy =
+      state.enabled && args.stage
+        ? STRATEGIES[args.stage]
+        : state.enabled
+          ? 'selective'
+          : '标准流程';
+
+    process.stdout.write(`[${label}] Arena: ${enabledText} | 范围: ${task} | 计划策略: ${strategy}\n`);
+    process.stdout.write(`generation=${state.generation ?? '未绑定批次；请显式 on 后再派发候选'}\n`);
+    if (action === 'on' || action === 'off') {
+      process.stdout.write(
+        state.enabled
+          ? '从下一阶段生效；不包含 Git 写操作授权。\n'
+          : '停止派发新候选；已运行候选请求取消，不支持时忽略其后续输出。不回滚已有产物。\n',
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(`无法读取或更新 arena 状态：${message}`);
+  }
+}
+
+main();

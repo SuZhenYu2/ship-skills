@@ -1,138 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/ship-arena-test.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
-python3 - "$ROOT" "$TMP" <<'PY'
-import json
-import pathlib
-import subprocess
-import sys
-import unittest
 
-root, temp = map(pathlib.Path, sys.argv[1:])
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-class ArenaTests(unittest.TestCase):
-    def setUp(self):
-        self.repo = temp / self._testMethodName
-        self.repo.mkdir()
-        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
-        self.script = root / 'scripts/arena-state.sh'
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
+    if [[ -x "${candidate}" ]]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
 
-    def run_state(self, *args, ok=True):
-        result = subprocess.run(['bash', str(self.script), '--repo', str(self.repo), *args], capture_output=True, text=True)
-        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
-        return result.stdout + result.stderr
+NODE_BIN="$(find_node || true)"
+if [[ -z "${NODE_BIN}" ]]; then
+  echo '[ERROR] arena 状态测试需要 Node.js（支持原生运行 TypeScript）。' >&2
+  exit 1
+fi
 
-    def test_default_off_without_writing(self):
-        self.assertIn('OFF', self.run_state('--task', 'order-cancel', 'status'))
-        self.assertFalse((self.repo / '.ship').exists())
-
-    def test_on_off_roundtrip_and_isolation(self):
-        self.assertIn('ON', self.run_state('--task', 'order-cancel', 'on'))
-        path = self.repo / '.ship/tasks/order-cancel/arena.json'
-        state = json.loads(path.read_text())
-        self.assertEqual({key: value for key, value in state.items() if key != 'generation'}, dict(version=1, enabled=True, policy='selective', candidates=2))
-        self.assertTrue(state['generation'])
-        self.assertIn('OFF', self.run_state('--task', 'other', 'status'))
-        self.assertIn('OFF', self.run_state('--task', 'order-cancel', 'off'))
-        self.assertFalse(json.loads(path.read_text())['enabled'])
-        status = subprocess.run(['git', '-C', str(self.repo), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout
-        self.assertEqual(status, '')
-
-    def test_missing_or_unsafe_task_rejected(self):
-        self.run_state('on', ok=False)
-        for task in ['../escape', '/tmp/escape', 'Upper', '.', '']:
-            self.run_state('--task', task, 'on', ok=False)
-        self.assertFalse((self.repo / '.ship').exists())
-
-    def test_invalid_config_is_not_silent_off(self):
-        self.run_state('--task', 'test', 'on')
-        path = self.repo / '.ship/tasks/test/arena.json'
-        for content in ['{', 'null', '[]', '{"version":1,"enabled":"false","policy":"selective","candidates":2}', '{"version":2,"enabled":true,"policy":"selective","candidates":2}']:
-            path.write_text(content)
-            self.run_state('--task', 'test', 'status', ok=False)
-            self.run_state('--task', 'test', 'on', ok=False)
-            self.assertEqual(path.read_text(), content)
-
-    def test_stage_banner_is_plan_not_execution_claim(self):
-        self.run_state('--task', 'test', 'on')
-        out = self.run_state('--task', 'test', 'status', '--stage', 'ship-plan')
-        self.assertIn('ship-plan', out)
-        self.assertIn('ON', out)
-        self.assertIn('计划策略', out)
-        self.assertIn('双候选', out)
-        out = self.run_state('--task', 'test', 'status', '--stage', 'ship-commit')
-        self.assertIn('Lead', out)
-        self.run_state('--task', 'test', 'status', '--stage', 'unknown', ok=False)
-
-    def test_symlink_escape_rejected(self):
-        outside = temp / (self._testMethodName + '-outside')
-        outside.mkdir()
-        (self.repo / '.ship').symlink_to(outside, target_is_directory=True)
-        self.run_state('--task', 'test', 'on', ok=False)
-        self.assertEqual(list(outside.iterdir()), [])
-
-    def test_installed_script_and_stage_hooks(self):
-        installed = temp / 'installed'
-        subprocess.run(['bash', str(root / 'scripts/install.sh'), '--target', 'codex', '--codex-dir', str(installed)], check=True, capture_output=True)
-        skills = list(installed.glob('ship-*'))
-        self.assertEqual(len(skills), 11)
-        for skill in skills:
-            text = (skill / 'SKILL.md').read_text()
-            self.assertIn('references/arena-policy.md', text)
-            self.assertIn('scripts/arena-state.sh', text)
-            self.assertTrue((skill / 'references/arena-policy.md').is_file())
-        self.script = installed / 'ship-arena/scripts/arena-state.sh'
-        self.assertIn('ON', self.run_state('--task', 'installed', 'on'))
-        self.assertIn('OFF', self.run_state('--task', 'other', 'status'))
-
-    def test_old_generation_rejected_after_off_on(self):
-        self.run_state('--task', 'test', 'on')
-        path = self.repo / '.ship/tasks/test/arena.json'
-        generation = json.loads(path.read_text()).get('generation', 'missing')
-        self.run_state('--task', 'test', 'check', '--generation', generation)
-        self.run_state('--task', 'test', 'off')
-        self.run_state('--task', 'test', 'check', '--generation', generation, ok=False)
-        self.run_state('--task', 'test', 'on')
-        self.run_state('--task', 'test', 'check', '--generation', generation, ok=False)
-        current = json.loads(path.read_text())['generation']
-        self.assertNotEqual(current, generation)
-        self.run_state('--task', 'test', 'check', '--generation', current)
-        self.run_state('--task', 'test', 'status')
-        self.assertEqual(json.loads(path.read_text())['generation'], current)
-
-    def test_legacy_enabled_config_requires_explicit_reenable(self):
-        path = self.repo / '.ship/tasks/legacy/arena.json'
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps(dict(version=1, enabled=True, policy='selective', candidates=2)))
-        self.assertIn('未绑定批次', self.run_state('--task', 'legacy', 'status'))
-        self.run_state('--task', 'legacy', 'check', '--generation', 'old', ok=False)
-        self.run_state('--task', 'legacy', 'on')
-        self.assertTrue(json.loads(path.read_text())['generation'])
-
-    def test_check_requires_task_local_generation(self):
-        self.run_state('--task', 'test', 'check', ok=False)
-        self.run_state('--task', 'test', 'on')
-        path = self.repo / '.ship/tasks/test/arena.json'
-        generation = json.loads(path.read_text()).get('generation', 'missing')
-        self.run_state('--task', 'other', 'on')
-        self.run_state('--task', 'other', 'check', '--generation', generation, ok=False)
-
-    def test_worktree_supported(self):
-        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'baseline'], check=True)
-        worktree = temp / 'linked-worktree'
-        subprocess.run(['git', '-C', str(self.repo), 'worktree', 'add', '-qb', 'test-arena', str(worktree)], check=True, capture_output=True)
-        self.repo = worktree
-        self.assertIn('ON', self.run_state('--task', 'linked', 'on'))
-        self.assertIn('ON', self.run_state('--task', 'linked', 'status'))
-
-    def test_non_git_target_rejected(self):
-        other = temp / 'non-git'
-        other.mkdir()
-        result = subprocess.run(['bash', str(self.script), '--repo', str(other), '--task', 'test', 'on'], capture_output=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((other / '.ship').exists())
-
-unittest.main(argv=['arena-state'], verbosity=2)
-PY
+exec "${NODE_BIN}" --test "${SCRIPT_DIR}/test-arena-state.ts"

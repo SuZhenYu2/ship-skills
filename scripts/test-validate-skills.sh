@@ -42,10 +42,10 @@ expect_fail() {
 yaml_parse_all() {
   local root="$1"
   if command -v ruby >/dev/null 2>&1; then
-    ruby -ryaml -e '
+    ruby -EUTF-8 -ryaml -e '# encoding: utf-8
       ok = true
       Dir.glob(File.join(ARGV[0], "skills/ship-*/SKILL.md")).sort.each do |f|
-        fm = File.read(f).split(/^---\s*$/)[1]
+        fm = File.read(f, encoding: "UTF-8").split(/^---\s*$/)[1]
         begin
           d = YAML.safe_load(fm)
           raise "name/description 缺失或类型错误" unless d.is_a?(Hash) && d["name"].is_a?(String) && d["description"].is_a?(String)
@@ -56,24 +56,8 @@ yaml_parse_all() {
       end
       exit(ok ? 0 : 1)
     ' "${root}"
-  elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 - "${root}" <<'PY'
-import glob, os, re, sys
-import yaml
-ok = True
-for f in sorted(glob.glob(os.path.join(sys.argv[1], "skills/ship-*/SKILL.md"))):
-    raw = open(f, encoding="utf-8").read()
-    parts = re.split(r"^---\s*$", raw, flags=re.M)
-    try:
-        d = yaml.safe_load(parts[1])
-        assert isinstance(d, dict) and isinstance(d.get("name"), str) and isinstance(d.get("description"), str)
-    except Exception as e:
-        print(f"  {f}: {e}", file=sys.stderr)
-        ok = False
-sys.exit(0 if ok else 1)
-PY
   else
-    echo "  缺少 YAML 解析器（ruby 或 python3+PyYAML）" >&2
+    echo "  缺少 YAML 解析器（ruby）" >&2
     return 1
   fi
 }
@@ -107,6 +91,11 @@ T_NO_DESC="${TMP_ROOT}/no-description"
 copy_repo "${T_NO_DESC}"
 awk '!/^description:/' "${T_NO_DESC}/skills/ship-auto/SKILL.md" > "${T_NO_DESC}/skills/ship-auto/SKILL.md.tmp" && mv "${T_NO_DESC}/skills/ship-auto/SKILL.md.tmp" "${T_NO_DESC}/skills/ship-auto/SKILL.md"
 expect_fail "缺少 description 被拦截" bash "${T_NO_DESC}/scripts/validate-skills.sh"
+
+T_NO_EXEC="${TMP_ROOT}/no-exec"
+copy_repo "${T_NO_EXEC}"
+chmod -x "${T_NO_EXEC}/scripts/arena-state.sh"
+expect_fail "脚本缺少可执行权限被拦截" bash "${T_NO_EXEC}/scripts/validate-skills.sh"
 
 echo "汇总：${PASSED} passed, ${FAILED} failed"
 [[ "${FAILED}" -eq 0 ]]

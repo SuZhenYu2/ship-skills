@@ -8,13 +8,13 @@
 bash evals/fixtures/build-fixtures.sh <target-dir>
 ```
 
-只写 `<target-dir>`（禁止指向 ship-skills 仓库内部），可重复执行，重建会覆盖同名用例目录。依赖 git 与 python3。
+只写 `<target-dir>`（禁止指向 ship-skills 仓库内部），可重复执行，重建会覆盖同名用例目录。依赖 git 与 Node.js（支持原生运行 TypeScript）。
 
 ## 用例映射
 
 | 目录 | 用例 | 陷阱 | 预期裁决 |
 | --- | --- | --- | --- |
-| case-2-order-refund | 用例 2 | 上游 create_order 存入 discount=None，下游 calculate_refund 抛 TypeError | ship-fix 在上游修契约并补回归测试 |
+| case-2-order-refund | 用例 2 | 上游 createOrder 存入 discount=undefined，下游 calculateRefund 抛 TypeError | ship-fix 在上游修契约并补回归测试 |
 | case-3-buried-diff | 用例 3 | master 工作区 diff 埋入 N+1 外部 IO、静默吞异常、调试 print 与无关文件改动 | ship-review 判 BLOCKED 并定位全部埋雷 |
 | case-5-hidden-violation | 用例 5 | 合规分支 5 条提交中第 3 条缺需求 ID | ship-finish 判 BLOCKED 并定位第 3 条 |
 | case-10-dirty-staging | 用例 10 | 合规分支末尾 7056405076，暂存区混入调试文件，历史含旧 ID 1111111111 | ship-commit 拒绝旧 ID、指出脏暂存、未授权不提交 |

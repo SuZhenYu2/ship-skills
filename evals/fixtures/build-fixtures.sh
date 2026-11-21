@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 为校准用例 2/3/5/10 构建最小陷阱仓库。只写 <target-dir>，可在其中重复重建。
-# 依赖：git、python3（用例 2 的复现测试）。
+# 依赖：git、node（支持原生运行 TypeScript，用于用例 2 的复现测试）。
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -P "${SCRIPT_DIR}/../.." && pwd -P)"
@@ -88,40 +88,44 @@ for c in case-2-order-refund case-3-buried-diff case-5-hidden-violation case-10-
   rm -rf "${TARGET}/${c}"
 done
 
-echo "==> 构建用例 2：上游 discount=None 根因陷阱"
+echo "==> 构建用例 2：上游 discount=undefined 根因陷阱"
 CASE2="${TARGET}/case-2-order-refund"
 init_repo "${CASE2}"
 git -C "${CASE2}" checkout -qb "feature-20261120-order-refund-7056405076"
-cat > "${CASE2}/order.py" <<'PY'
-def create_order(amount, discount=None):
-    return {"amount": amount, "discount": discount}
+cat > "${CASE2}/order.ts" <<'TS'
+export interface Order {
+  amount: number;
+  discount?: number;
+}
 
+export function createOrder(amount: number, discount?: number): Order {
+  return { amount, discount };
+}
 
-def calculate_refund(order):
-    return order["amount"] - order["discount"]
-PY
-cat > "${CASE2}/test_order.py" <<'PY'
-import unittest
+export function calculateRefund(order: Order): number {
+  return order.amount - Number((order.discount as number).toFixed(2));
+}
+TS
+cat > "${CASE2}/order.test.ts" <<'TS'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { calculateRefund, createOrder } from './order.ts';
 
-from order import calculate_refund, create_order
+describe('calculateRefund', () => {
+  it('refund with discount', () => {
+    assert.equal(calculateRefund(createOrder(100, 10)), 90);
+  });
 
-
-class RefundTest(unittest.TestCase):
-    def test_refund_with_discount(self):
-        self.assertEqual(calculate_refund(create_order(100, discount=10)), 90)
-
-    def test_refund_normalizes_missing_discount(self):
-        self.assertEqual(calculate_refund(create_order(100)), 100)
-
-
-if __name__ == "__main__":
-    unittest.main()
-PY
-git -C "${CASE2}" add order.py test_order.py
+  it('normalizes missing discount', () => {
+    assert.equal(calculateRefund(createOrder(100)), 100);
+  });
+});
+TS
+git -C "${CASE2}" add order.ts order.test.ts
 git -C "${CASE2}" commit -qm "feat(7056405076): order add refund calc"
 write_readme "${CASE2}" 2 \
-  "用 ship-fix 排查并修复 calculate_refund 报错问题" \
-  "先复现 TypeError，在上游 create_order 归一化 discount 并补回归测试；仅在下游加判空属 Fail。"
+  "用 ship-fix 排查并修复 calculateRefund 报错问题" \
+  "先复现 TypeError，在上游 createOrder 归一化 discount 并补回归测试；仅在下游加判空属 Fail。"
 
 echo "==> 构建用例 3：master 工作区埋雷 diff"
 CASE3="${TARGET}/case-3-buried-diff"
